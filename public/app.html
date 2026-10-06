@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>સેવા એન્ટ્રી - જમોને જમાડું રે</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;800&display=swap">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>જમોને જમાડું રે... <small id="eventName"></small></h1>
+    <a id="adminLink" class="btn small secondary hidden" href="/admin.html">એડમિન</a>
+    <button class="small" onclick="changePassword()">🔑</button>
+    <button class="small" onclick="logout()">બહાર</button>
+  </div>
+
+  <div class="wrap narrow">
+    <div class="tabs">
+      <button data-tab="form" class="active">➕ નવી એન્ટ્રી</button>
+      <button data-tab="list">📋 મારી એન્ટ્રી</button>
+    </div>
+
+    <!-- ENTRY FORM -->
+    <section id="tab-form">
+      <form class="card" id="entryForm" autocomplete="off">
+        <h2 id="formTitle">સેવા નોંધણી</h2>
+
+        <label>મોબાઇલ નં. *</label>
+        <input name="mobile" type="tel" inputmode="numeric" maxlength="10" required placeholder="10 આંકડા">
+        <div id="mobileInfo"></div>
+
+        <label class="check"><input type="checkbox" name="whatsapp_same" checked> WhatsApp નંબર આ જ છે</label>
+        <div id="waBox" class="hidden">
+          <label>WhatsApp નં. <span class="opt">(વૈકલ્પિક)</span></label>
+          <input name="whatsapp" type="tel" inputmode="numeric" maxlength="10">
+        </div>
+
+        <label>નામ *</label>
+        <input name="devotee_name" required>
+
+        <label>મંડળ *</label>
+        <select name="mandal_id" required></select>
+
+        <label>સરનામું <span class="opt">(વૈકલ્પિક)</span></label>
+        <textarea name="address"></textarea>
+
+        <label>સેવા પસંદ કરો</label>
+        <div class="sevas" id="sevas"></div>
+
+        <label>સેવાની રકમ *</label>
+        <div class="amount-box"><span>₹</span><input name="amount" type="number" inputmode="numeric" min="1" required></div>
+
+        <div class="row">
+          <div>
+            <label>ચુકવણી</label>
+            <select name="payment_mode">
+              <option value="cash">રોકડ (Cash)</option>
+              <option value="upi">UPI / Online</option>
+              <option value="cheque">ચેક (Cheque)</option>
+              <option value="pending">બાકી (Pending)</option>
+            </select>
+          </div>
+          <div>
+            <label>UPI/ચેક નં. <span class="opt">(વૈકલ્પિક)</span></label>
+            <input name="payment_ref">
+          </div>
+        </div>
+
+        <label>નોંધ <span class="opt">(વૈકલ્પિક)</span></label>
+        <input name="notes">
+
+        <button class="block" type="submit" id="saveBtn">સેવ કરો ✔</button>
+        <button class="block secondary hidden" type="button" id="cancelEdit">રદ કરો</button>
+      </form>
+
+      <div class="card ok-box hidden" id="doneBox">
+        <div class="big">🙏</div>
+        <h2>જય સ્વામિનારાયણ! સેવા નોંધાઈ ગઈ</h2>
+        <div>રસીદ નં.</div>
+        <div class="receipt-no" id="doneReceipt"></div>
+        <div id="doneDetails"></div>
+        <div class="actions">
+          <a class="btn green" id="doneWa" target="_blank">WhatsApp પર મોકલો</a>
+          <a class="btn secondary" id="donePrint" target="_blank">🖨 રસીદ</a>
+          <button onclick="newEntry()">➕ નવી એન્ટ્રી</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- MY ENTRIES -->
+    <section id="tab-list" class="hidden">
+      <div class="stats">
+        <div class="stat"><div class="v" id="myCount">0</div><div class="l">એન્ટ્રી</div></div>
+        <div class="stat"><div class="v" id="myTotal">₹ 0</div><div class="l">કુલ સેવા</div></div>
+      </div>
+      <input id="search" placeholder="🔍 નામ / મોબાઇલ / રસીદ નં. શોધો" style="margin-bottom:12px">
+      <div id="list"></div>
+    </section>
+  </div>
+
+  <script src="/common.js"></script>
+  <script>
+    const form = $('#entryForm');
+    let meta, me, editingId = null, amountTouched = false;
+
+    async function init() {
+      [me, meta] = await Promise.all([api('/api/me'), api('/api/meta')]);
+      if (me.role === 'admin') $('#adminLink').classList.remove('hidden');
+      $('#eventName').textContent = meta.event ? `${meta.event.name} · ${me.name}` : t('કોઈ ચાલુ ઉત્સવ નથી');
+      form.mandal_id.innerHTML = `<option value="">${t('-- મંડળ પસંદ કરો --')}</option>` +
+        meta.mandals.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+      $('#sevas').innerHTML = meta.sevaTypes.map((s) => `
+        <label class="seva"><input type="checkbox" name="seva" value="${s.id}" data-amount="${s.amount}">
+          ${esc(s.name)} <span class="amt">${rupees(s.amount)}</span></label>`).join('');
+      resetForm();
+      const editId = new URLSearchParams(location.search).get('edit');
+      if (editId) loadForEdit(editId);
+    }
+
+    function resetForm() {
+      form.reset(); editingId = null; amountTouched = false;
+      form.mandal_id.value = me.mandal_id || '';
+      $('#waBox').classList.add('hidden');
+      $('#mobileInfo').innerHTML = '';
+      $('#formTitle').textContent = t('સેવા નોંધણી');
+      $('#cancelEdit').classList.add('hidden');
+    }
+
+    function newEntry() {
+      resetForm();
+      $('#doneBox').classList.add('hidden'); form.classList.remove('hidden');
+      history.replaceState(null, '', '/app.html');
+      form.mobile.focus();
+    }
+
+    // WhatsApp same-as-mobile checkbox
+    form.whatsapp_same.addEventListener('change', () => $('#waBox').classList.toggle('hidden', form.whatsapp_same.checked));
+
+    // Ticking seva boxes auto-fills the total (karyakar can still type a different amount)
+    $('#sevas').addEventListener('change', () => {
+      if (amountTouched && form.amount.value) return;
+      const sum = $$('input[name=seva]:checked').reduce((s, c) => s + Number(c.dataset.amount), 0);
+      form.amount.value = sum || '';
+    });
+    form.amount.addEventListener('input', () => { amountTouched = !!form.amount.value; });
+
+    // After mobile is typed: warn about duplicates this year + offer last year's details
+    form.mobile.addEventListener('input', async () => {
+      const m = form.mobile.value.replace(/\D/g, '');
+      $('#mobileInfo').innerHTML = '';
+      if (m.length !== 10) return;
+      const r = await api(`/api/entries/check-mobile?mobile=${m}&exclude=${editingId || 0}`);
+      let html = '';
+      if (r.existing.length) html += `<div class="warn">${t('⚠ આ નંબરથી આ વર્ષે પહેલેથી {0} એન્ટ્રી છે: ', r.existing.length)}` +
+        r.existing.map((x) => `${t('રસીદ {0}', x.receipt_no)} - ${esc(x.devotee_name)} ${rupees(x.amount)} (${esc(x.karyakar_name)})`).join('; ') + '</div>';
+      if (r.previous && !editingId && !form.devotee_name.value) {
+        html += `<div class="warn">${t('ગયા વખતની માહિતી મળી:')} <b>${esc(r.previous.devotee_name)}</b>
+          <button type="button" class="small green" id="fillPrev">${t('ભરો')}</button></div>`;
+      }
+      $('#mobileInfo').innerHTML = html;
+      const btn = $('#fillPrev');
+      if (btn) btn.onclick = () => {
+        form.devotee_name.value = r.previous.devotee_name || '';
+        form.address.value = r.previous.address || '';
+        if (r.previous.mandal_id) form.mandal_id.value = r.previous.mandal_id;
+        if (r.previous.whatsapp && r.previous.whatsapp !== m) {
+          form.whatsapp_same.checked = false; $('#waBox').classList.remove('hidden'); form.whatsapp.value = r.previous.whatsapp;
+        }
+        btn.parentElement.remove();
+      };
+    });
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const body = {
+        mobile: form.mobile.value, whatsapp_same: form.whatsapp_same.checked, whatsapp: form.whatsapp.value,
+        devotee_name: form.devotee_name.value, mandal_id: form.mandal_id.value, address: form.address.value,
+        seva_ids: $$('input[name=seva]:checked').map((c) => Number(c.value)),
+        amount: form.amount.value, payment_mode: form.payment_mode.value, payment_ref: form.payment_ref.value, notes: form.notes.value,
+      };
+      $('#saveBtn').disabled = true;
+      try {
+        const e = editingId
+          ? await api(`/api/entries/${editingId}`, { method: 'PUT', body })
+          : await api('/api/entries', { method: 'POST', body });
+        showDone(e, !!editingId);
+      } catch (err) { toast(err.message, true); }
+      $('#saveBtn').disabled = false;
+    });
+
+    function showDone(e, wasEdit) {
+      form.classList.add('hidden'); $('#doneBox').classList.remove('hidden');
+      $('#doneReceipt').textContent = e.receipt_no;
+      $('#doneDetails').innerHTML = `<b>${esc(e.devotee_name)}</b> · ${esc(e.mandal_name)}<br>${esc(e.sevas.map((s) => s.name).join(', '))}<br>
+        <b style="font-size:20px;color:var(--green)">${rupees(e.amount)}</b>${wasEdit ? '<br>' + t('(સુધારો સેવ થયો)') : ''}`;
+      $('#doneWa').href = whatsappLink(e);
+      $('#donePrint').href = `/receipt.html?id=${e.id}`;
+      window.scrollTo(0, 0);
+    }
+
+    async function loadForEdit(id) {
+      try {
+        const e = await api(`/api/entries/${id}`);
+        switchTab('form'); newEntry(); editingId = e.id; amountTouched = true;
+        history.replaceState(null, '', `/app.html?edit=${e.id}`);
+        $('#formTitle').textContent = t('એન્ટ્રી સુધારો - રસીદ {0}', e.receipt_no);
+        $('#cancelEdit').classList.remove('hidden');
+        form.mobile.value = e.mobile; form.devotee_name.value = e.devotee_name; form.mandal_id.value = e.mandal_id;
+        form.address.value = e.address || ''; form.amount.value = e.amount; form.payment_mode.value = e.payment_mode;
+        form.payment_ref.value = e.payment_ref || ''; form.notes.value = e.notes || '';
+        const same = !e.whatsapp || e.whatsapp === e.mobile;
+        form.whatsapp_same.checked = same; form.whatsapp.value = same ? '' : e.whatsapp;
+        $('#waBox').classList.toggle('hidden', same);
+        const ids = e.sevas.map((s) => String(s.seva_type_id));
+        $$('input[name=seva]').forEach((c) => (c.checked = ids.includes(c.value)));
+      } catch (err) { toast(err.message, true); }
+    }
+    $('#cancelEdit').onclick = newEntry;
+
+    // ----- my entries list -----
+    let searchTimer;
+    $('#search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 300); });
+
+    async function loadList() {
+      const q = $('#search').value.trim();
+      const r = await api('/api/entries' + (q ? `?q=${encodeURIComponent(q)}` : ''));
+      $('#myCount').textContent = r.rows.length;
+      $('#myTotal').textContent = rupees(r.total);
+      $('#list').innerHTML = r.rows.map((e) => `
+        <div class="entry-item">
+          <div class="top"><span class="name">#${e.receipt_no} ${esc(e.devotee_name)}</span><span class="amt">${rupees(e.amount)}</span></div>
+          <div class="meta">📱 ${e.mobile} · ${esc(e.mandal_name)} · ${esc(e.seva_names || '-')}
+            · <span class="badge ${e.paid ? '' : 'pending'}">${PAYMENT[e.payment_mode]}</span></div>
+          <div class="actions" style="justify-content:flex-start">
+            <button class="small secondary" onclick="loadForEdit(${e.id})">${t('✏ સુધારો')}</button>
+            <a class="btn small green" target="_blank" href="${esc(whatsappLink({ ...e, karyakar_mobile: me.mobile }))}">WhatsApp</a>
+            <a class="btn small secondary" target="_blank" href="/receipt.html?id=${e.id}">${t('🖨 રસીદ')}</a>
+          </div>
+        </div>`).join('') || '<p style="text-align:center;color:var(--muted)">' + t('હજુ કોઈ એન્ટ્રી નથી') + '</p>';
+    }
+
+    function switchTab(name) {
+      $$('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+      $('#tab-form').classList.toggle('hidden', name !== 'form');
+      $('#tab-list').classList.toggle('hidden', name !== 'list');
+      if (name === 'list') loadList();
+    }
+    $$('.tabs button').forEach((b) => (b.onclick = () => switchTab(b.dataset.tab)));
+
+    init().catch((e) => toast(e.message, true));
+  </script>
+</body>
+</html>

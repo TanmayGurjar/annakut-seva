@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>લૉગિન - જમોને જમાડું રે</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;800&display=swap">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap narrow">
+    <div class="login-hero">
+      <div class="title">અન્નકૂટોત્સવ</div>
+      <div class="sub">જમોને જમાડું રે...</div>
+      <div style="color:var(--muted);font-size:14px">બી.એ.પી.એસ. શ્રી સ્વામિનારાયણ મંદિર, પોરબંદર</div>
+    </div>
+    <form class="card" id="loginForm">
+      <h2>લૉગિન (Login)</h2>
+      <label>મોબાઇલ નંબર</label>
+      <input name="mobile" type="tel" inputmode="numeric" maxlength="10" autocomplete="username" required>
+      <label>પાસવર્ડ</label>
+      <input name="password" type="password" autocomplete="current-password" required>
+      <button class="block" type="submit">લૉગિન કરો</button>
+    </form>
+  </div>
+  <script src="/common.js"></script>
+  <script>
+    // Already logged in? Go straight to the right page
+    fetch('/api/me').then((r) => r.ok && r.json()).then((u) => { if (u) location.href = u.role === 'admin' ? '/admin.html' : '/app.html'; });
+
+    $('#loginForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const f = ev.target;
+      try {
+        const u = await api('/api/login', { method: 'POST', body: { mobile: f.mobile.value, password: f.password.value } });
+        location.href = u.role === 'admin' ? '/admin.html' : '/app.html';
+      } catch (e) { toast(e.message, true); }
+    });
+  </script>
+</body>
+</html>

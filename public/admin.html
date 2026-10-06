@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>એડમિન - જમોને જમાડું રે</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;800&display=swap">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>એડમિન પેનલ <small id="eventName"></small></h1>
+    <a class="btn small secondary" href="/app.html">➕ એન્ટ્રી</a>
+    <button class="small" onclick="changePassword()">🔑</button>
+    <button class="small" onclick="logout()">બહાર</button>
+  </div>
+
+  <div class="wrap">
+    <div class="tabs">
+      <button data-tab="dash" class="active">📊 ડેશબોર્ડ</button>
+      <button data-tab="entries">📋 બધી એન્ટ્રી</button>
+      <button data-tab="users">👥 કાર્યકર</button>
+      <button data-tab="mandals">🏘 મંડળ</button>
+      <button data-tab="sevas">🍱 સેવા/થાળ</button>
+      <button data-tab="events">📅 ઉત્સવ</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <section id="tab-dash">
+      <div class="stats">
+        <div class="stat"><div class="v" id="sTotal">-</div><div class="l">કુલ સેવા રકમ</div></div>
+        <div class="stat"><div class="v" id="sCount">-</div><div class="l">કુલ એન્ટ્રી</div></div>
+        <div class="stat"><div class="v" id="sPending">-</div><div class="l">બાકી રકમ</div></div>
+      </div>
+      <div class="row">
+        <div class="card soft"><h3>મંડળ પ્રમાણે</h3><div class="table-wrap" id="byMandal"></div></div>
+        <div class="card soft"><h3>થાળ / સેવા પ્રમાણે</h3><div class="table-wrap" id="bySeva"></div></div>
+      </div>
+      <div class="row">
+        <div class="card soft"><h3>કાર્યકર પ્રમાણે</h3><div class="table-wrap" id="byKaryakar"></div></div>
+        <div class="card soft"><h3>ચુકવણી પ્રમાણે</h3><div class="table-wrap" id="byPayment"></div></div>
+      </div>
+    </section>
+
+    <!-- ENTRIES -->
+    <section id="tab-entries" class="hidden">
+      <div class="filters">
+        <input id="fQ" placeholder="🔍 નામ / મોબાઇલ / રસીદ">
+        <select id="fMandal"></select>
+        <select id="fKaryakar"></select>
+        <select id="fSeva"></select>
+        <select id="fPay">
+          <option value="">બધી ચુકવણી</option><option value="cash">રોકડ</option><option value="upi">UPI</option>
+          <option value="cheque">ચેક</option><option value="pending">બાકી</option>
+        </select>
+      </div>
+      <div class="toolbar">
+        <div class="grow"><b id="eCount">0</b> એન્ટ્રી · કુલ <b id="eTotal">₹ 0</b></div>
+        <button class="green small" onclick="exportCsv()">⬇ Excel (CSV)</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>રસીદ</th><th>નામ</th><th>મોબાઇલ</th><th>મંડળ</th><th>સેવા</th><th class="num">રકમ</th><th>ચુકવણી</th><th>કાર્યકર</th><th>તારીખ</th><th></th></tr></thead>
+          <tbody id="eBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- USERS -->
+    <section id="tab-users" class="hidden">
+      <div class="toolbar"><div class="grow">કાર્યકરોને અહીં ઉમેરો. તેઓ મોબાઇલ નંબર + પાસવર્ડથી લૉગિન કરશે.</div>
+        <button onclick="editUser()">➕ નવો કાર્યકર</button></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>નામ</th><th>મોબાઇલ</th><th>ભૂમિકા</th><th>મંડળ</th><th class="num">એન્ટ્રી</th><th>સ્થિતિ</th><th></th></tr></thead>
+        <tbody id="uBody"></tbody></table></div>
+    </section>
+
+    <!-- MANDALS -->
+    <section id="tab-mandals" class="hidden">
+      <div class="toolbar"><div class="grow">પોરબંદરના વિસ્તાર / મંડળ</div><button onclick="editMandal()">➕ નવું મંડળ</button></div>
+      <div class="table-wrap"><table><thead><tr><th>મંડળ</th><th>સ્થિતિ</th><th></th></tr></thead><tbody id="mBody"></tbody></table></div>
+    </section>
+
+    <!-- SEVA TYPES -->
+    <section id="tab-sevas" class="hidden">
+      <div class="toolbar"><div class="grow">થાળ / સેવાના પ્રકાર અને રકમ</div><button onclick="editSeva()">➕ નવી સેવા</button></div>
+      <div class="table-wrap"><table><thead><tr><th>ક્રમ</th><th>સેવા</th><th class="num">રકમ</th><th>સ્થિતિ</th><th></th></tr></thead><tbody id="sBody"></tbody></table></div>
+    </section>
+
+    <!-- EVENTS -->
+    <section id="tab-events" class="hidden">
+      <div class="toolbar"><div class="grow">દર વર્ષે નવો ઉત્સવ બનાવો અને તેને "ચાલુ" કરો. જૂના વર્ષનો ડેટા સચવાયેલો રહેશે.</div>
+        <button onclick="editEvent()">➕ નવો ઉત્સવ</button></div>
+      <div class="table-wrap"><table><thead><tr><th>ઉત્સવ</th><th>તારીખ</th><th>સ્થળ</th><th class="num">એન્ટ્રી</th><th class="num">કુલ</th><th>સ્થિતિ</th><th></th></tr></thead><tbody id="evBody"></tbody></table></div>
+    </section>
+  </div>
+
+  <dialog id="dlg"><form id="dlgForm" method="dialog"></form></dialog>
+
+  <script src="/common.js"></script>
+  <script>
+    let meta, users = [], mandals = [], sevaTypes = [], events = [];
+    const table = (rows, cols) => rows.length
+      ? `<table><thead><tr>${cols.map((c) => `<th class="${c[2] || ''}">${t(c[0])}</th>`).join('')}</tr></thead><tbody>` +
+        rows.map((r) => `<tr>${cols.map((c) => `<td class="${c[2] || ''}">${c[1](r)}</td>`).join('')}</tr>`).join('') + '</tbody></table>'
+      : '<p style="color:var(--muted)">' + t('હજુ ડેટા નથી') + '</p>';
+    const status = (a) => t(a ? '✅ ચાલુ' : '⛔ બંધ');
+
+    // Generic popup form: fields = [{name, label, type, options, value}], onSave(values)
+    function openDialog(title, fields, onSave) {
+      const f = $('#dlgForm');
+      f.innerHTML = `<h2>${t(title)}</h2>` + fields.map((x) => {
+        if (x.type === 'checkbox') return `<label class="check"><input type="checkbox" name="${x.name}" ${x.value ? 'checked' : ''}> ${t(x.label)}</label>`;
+        if (x.type === 'select') return `<label>${t(x.label)}</label><select name="${x.name}">${x.options.map((o) =>
+          `<option value="${esc(o[0])}" ${String(o[0]) === String(x.value ?? '') ? 'selected' : ''}>${esc(t(o[1]))}</option>`).join('')}</select>`;
+        return `<label>${t(x.label)}</label><input name="${x.name}" type="${x.type || 'text'}" value="${esc(x.value ?? '')}" placeholder="${esc(x.placeholder || '')}">`;
+      }).join('') + `<div class="actions"><button value="save">${t('સેવ કરો')}</button><button type="button" class="secondary" onclick="dlg.close()">${t('રદ')}</button></div>`;
+      f.onsubmit = async (ev) => {
+        ev.preventDefault();
+        const values = {};
+        fields.forEach((x) => (values[x.name] = x.type === 'checkbox' ? f[x.name].checked : f[x.name].value));
+        try { await onSave(values); $('#dlg').close(); toast(t('સેવ થયું ✔')); refresh(); } catch (e) { toast(e.message, true); }
+      };
+      $('#dlg').showModal();
+    }
+    const dlg = $('#dlg');
+
+    async function loadBasics() {
+      [meta, users, mandals, sevaTypes, events] = await Promise.all([
+        api('/api/meta'), api('/api/users'), api('/api/mandals'), api('/api/seva-types'), api('/api/events')]);
+      $('#eventName').textContent = meta.event ? meta.event.name : '⚠ ' + t('કોઈ ચાલુ ઉત્સવ નથી');
+      const keep = (id) => $(id).value;
+      const opts = (all, list, label) => `<option value="">${t(all)}</option>` + list.map((x) => `<option value="${x.id}">${esc(label(x))}</option>`).join('');
+      const [m, k, s] = [keep('#fMandal'), keep('#fKaryakar'), keep('#fSeva')];
+      $('#fMandal').innerHTML = opts('બધા મંડળ', mandals, (x) => x.name); $('#fMandal').value = m;
+      $('#fKaryakar').innerHTML = opts('બધા કાર્યકર', users, (x) => x.name); $('#fKaryakar').value = k;
+      $('#fSeva').innerHTML = opts('બધી સેવા', sevaTypes, (x) => x.name); $('#fSeva').value = s;
+    }
+
+    // ----- dashboard -----
+    async function loadDash() {
+      const s = await api('/api/stats');
+      $('#sTotal').textContent = rupees(s.summary.total);
+      $('#sCount').textContent = s.summary.count;
+      $('#sPending').textContent = rupees(s.summary.pending);
+      $('#byMandal').innerHTML = table(s.byMandal, [['મંડળ', (r) => esc(r.name)], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
+      $('#bySeva').innerHTML = table(s.bySeva, [['સેવા', (r) => esc(r.name)], ['રકમ', (r) => rupees(r.amount), 'num'], ['સંખ્યા', (r) => r.count, 'num']]);
+      $('#byKaryakar').innerHTML = table(s.byKaryakar, [['કાર્યકર', (r) => esc(r.name)], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
+      $('#byPayment').innerHTML = table(s.byPayment, [['ચુકવણી', (r) => PAYMENT[r.payment_mode]], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
+    }
+
+    // ----- entries -----
+    function filterQuery() {
+      const p = new URLSearchParams();
+      const add = (k, id) => { const v = $(id).value.trim(); if (v) p.set(k, v); };
+      add('q', '#fQ'); add('mandal_id', '#fMandal'); add('karyakar_id', '#fKaryakar'); add('seva_type_id', '#fSeva'); add('payment_mode', '#fPay');
+      return p.toString();
+    }
+    async function loadEntries() {
+      const r = await api('/api/entries?' + filterQuery());
+      $('#eCount').textContent = r.rows.length; $('#eTotal').textContent = rupees(r.total);
+      $('#eBody').innerHTML = r.rows.map((e) => `<tr>
+        <td>${e.receipt_no}</td><td>${esc(e.devotee_name)}</td>
+        <td>${e.mobile}${e.whatsapp && e.whatsapp !== e.mobile ? '<br><small>WA ' + e.whatsapp + '</small>' : ''}</td>
+        <td>${esc(e.mandal_name)}</td><td>${esc(e.seva_names || '-')}</td><td class="num">${rupees(e.amount)}</td>
+        <td><span class="badge ${e.paid ? '' : 'pending'}">${PAYMENT[e.payment_mode]}</span></td>
+        <td>${esc(e.karyakar_name)}</td><td><small>${esc(e.created_at)}</small></td>
+        <td style="white-space:nowrap"><a class="btn small secondary" href="/app.html?edit=${e.id}">✏</a>
+          <a class="btn small secondary" target="_blank" href="/receipt.html?id=${e.id}">🖨</a>
+          <button class="small danger" onclick="delEntry(${e.id}, ${e.receipt_no})">🗑</button></td></tr>`).join('')
+        || '<tr><td colspan="10" style="text-align:center;color:var(--muted)">' + t('કોઈ એન્ટ્રી નથી') + '</td></tr>';
+    }
+    let ft; ['#fQ', '#fMandal', '#fKaryakar', '#fSeva', '#fPay'].forEach((id) =>
+      $(id).addEventListener('input', () => { clearTimeout(ft); ft = setTimeout(loadEntries, 300); }));
+    function exportCsv() { location.href = '/api/export.csv?' + filterQuery(); }
+    async function delEntry(id, no) {
+      if (!confirm(t('રસીદ {0} કાઢી નાખવી છે? આ પાછું નહીં આવે.', no))) return;
+      try { await api(`/api/entries/${id}`, { method: 'DELETE' }); toast(t('કાઢી નાખ્યું')); loadEntries(); } catch (e) { toast(e.message, true); }
+    }
+
+    // ----- users -----
+    function renderUsers() {
+      $('#uBody').innerHTML = users.map((u) => `<tr class="${u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td>${u.mobile}</td>
+        <td>${t(u.role === 'admin' ? 'એડમિન' : 'કાર્યકર')}</td><td>${esc(u.mandal_name || '-')}</td><td class="num">${u.entry_count}</td>
+        <td>${status(u.active)}</td><td><button class="small secondary" onclick="editUser(${u.id})">✏</button></td></tr>`).join('');
+    }
+    function editUser(id) {
+      const u = users.find((x) => x.id === id) || { active: 1, role: 'karyakar' };
+      openDialog(id ? 'કાર્યકર સુધારો' : 'નવો કાર્યકર', [
+        { name: 'name', label: 'નામ *', value: u.name },
+        { name: 'mobile', label: 'મોબાઇલ નં. * (લૉગિન માટે)', type: 'tel', value: u.mobile },
+        { name: 'password', label: id ? 'નવો પાસવર્ડ (ખાલી રાખો તો બદલાશે નહીં)' : 'પાસવર્ડ * (min 6)', type: 'text' },
+        { name: 'mandal_id', label: 'મંડળ', type: 'select', value: u.mandal_id, options: [['', '-- કોઈ નહીં --'], ...mandals.map((m) => [m.id, m.name])] },
+        { name: 'role', label: 'ભૂમિકા', type: 'select', value: u.role, options: [['karyakar', 'કાર્યકર'], ['admin', 'એડમિન']] },
+        { name: 'active', label: 'ચાલુ (લૉગિન કરી શકે)', type: 'checkbox', value: u.active },
+      ], (v) => api(id ? `/api/users/${id}` : '/api/users', { method: id ? 'PUT' : 'POST', body: v }));
+    }
+
+    // ----- mandals -----
+    function renderMandals() {
+      $('#mBody').innerHTML = mandals.map((m) => `<tr class="${m.active ? '' : 'inactive'}"><td>${esc(m.name)}</td><td>${status(m.active)}</td>
+        <td><button class="small secondary" onclick="editMandal(${m.id})">✏</button></td></tr>`).join('');
+    }
+    function editMandal(id) {
+      const m = mandals.find((x) => x.id === id) || { active: 1 };
+      openDialog(id ? 'મંડળ સુધારો' : 'નવું મંડળ', [
+        { name: 'name', label: 'મંડળનું નામ *', value: m.name },
+        { name: 'active', label: 'ચાલુ', type: 'checkbox', value: m.active },
+      ], (v) => api(id ? `/api/mandals/${id}` : '/api/mandals', { method: id ? 'PUT' : 'POST', body: v }));
+    }
+
+    // ----- seva types -----
+    function renderSevas() {
+      $('#sBody').innerHTML = sevaTypes.map((s) => `<tr class="${s.active ? '' : 'inactive'}"><td>${s.sort}</td><td>${esc(s.name)}</td>
+        <td class="num">${rupees(s.amount)}</td><td>${status(s.active)}</td>
+        <td><button class="small secondary" onclick="editSeva(${s.id})">✏</button></td></tr>`).join('');
+    }
+    function editSeva(id) {
+      const s = sevaTypes.find((x) => x.id === id) || { active: 1, sort: sevaTypes.length + 1 };
+      openDialog(id ? 'સેવા સુધારો' : 'નવી સેવા', [
+        { name: 'name', label: 'સેવાનું નામ *', value: s.name },
+        { name: 'amount', label: 'રકમ ₹ *', type: 'number', value: s.amount },
+        { name: 'sort', label: 'ક્રમ', type: 'number', value: s.sort },
+        { name: 'active', label: 'ચાલુ (ફોર્મમાં દેખાય)', type: 'checkbox', value: s.active },
+      ], (v) => api(id ? `/api/seva-types/${id}` : '/api/seva-types', { method: id ? 'PUT' : 'POST', body: v }));
+    }
+
+    // ----- events -----
+    function renderEvents() {
+      $('#evBody').innerHTML = events.map((e) => `<tr><td>${esc(e.name)}</td><td>${esc(e.event_date || '-')}</td><td>${esc(e.place || '')}</td>
+        <td class="num">${e.entry_count}</td><td class="num">${rupees(e.total)}</td><td>${e.is_active ? t('✅ ચાલુ') : ''}</td>
+        <td><button class="small secondary" onclick="editEvent(${e.id})">✏</button></td></tr>`).join('');
+    }
+    function editEvent(id) {
+      const e = events.find((x) => x.id === id) || { is_active: 1, place: meta.event?.place, time_text: meta.event?.time_text };
+      openDialog(id ? 'ઉત્સવ સુધારો' : 'નવો ઉત્સવ', [
+        { name: 'name', label: 'ઉત્સવનું નામ *', value: e.name, placeholder: 'અન્નકૂટોત્સવ 2026' },
+        { name: 'event_date', label: 'તારીખ', type: 'date', value: e.event_date },
+        { name: 'place', label: 'સ્થળ', value: e.place },
+        { name: 'time_text', label: 'સમય', value: e.time_text },
+        { name: 'is_active', label: 'આ ઉત્સવ ચાલુ કરો (નવી એન્ટ્રી આમાં જશે)', type: 'checkbox', value: e.is_active },
+      ], (v) => api(id ? `/api/events/${id}` : '/api/events', { method: id ? 'PUT' : 'POST', body: v }));
+    }
+
+    // ----- tabs -----
+    let currentTab = 'dash';
+    async function refresh() {
+      await loadBasics();
+      ({ dash: loadDash, entries: loadEntries, users: renderUsers, mandals: renderMandals, sevas: renderSevas, events: renderEvents })[currentTab]();
+    }
+    $$('.tabs button').forEach((b) => (b.onclick = () => {
+      currentTab = b.dataset.tab;
+      $$('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+      $$('section').forEach((s) => s.classList.toggle('hidden', s.id !== 'tab-' + currentTab));
+      refresh().catch((e) => toast(e.message, true));
+    }));
+
+    api('/api/me').then((me) => {
+      if (me.role !== 'admin') { location.href = '/app.html'; return; }
+      refresh();
+    }).catch(() => {});
+  </script>
+</body>
+</html>

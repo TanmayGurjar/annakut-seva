@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="gu">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>રસીદ - અન્નકૂટોત્સવ</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gujarati:wght@400;600;800&display=swap">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .receipt { max-width: 520px; margin: 16px auto; background: #fff; border: 3px solid var(--red); padding: 20px; }
+    .receipt .head { text-align: center; border-bottom: 2px dashed var(--line); padding-bottom: 10px; margin-bottom: 10px; }
+    .receipt .head .t { font-size: 28px; font-weight: 800; color: var(--red); }
+    .receipt .head .s { font-size: 20px; font-weight: 700; color: var(--magenta); }
+    .receipt .line { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px solid #e5e5f5; }
+    .receipt .line b { color: var(--red); min-width: 120px; }
+    .receipt .total { font-size: 24px; color: var(--green); font-weight: 800; }
+    .receipt .foot { margin-top: 12px; text-align: center; color: var(--magenta); font-weight: 600; }
+    @media print { .noprint { display: none; } body { background: #fff; } .receipt { margin: 0 auto; } }
+  </style>
+</head>
+<body>
+  <div class="receipt" id="r">લોડ થાય છે...</div>
+  <div class="actions noprint"><button onclick="print()">🖨 પ્રિન્ટ</button><button class="secondary" onclick="history.back()">પાછા</button></div>
+  <script src="/common.js"></script>
+  <script>
+    (async () => {
+      const id = new URLSearchParams(location.search).get('id');
+      try {
+        const e = await api(`/api/entries/${id}`);
+        const line = (k, v) => (v ? `<div class="line"><b>${t(k)}</b><span>${v}</span></div>` : '');
+        $('#r').innerHTML = `
+          <div class="head">
+            <div class="t">${esc(e.event_name)}</div>
+            <div class="s">${t('જમોને જમાડું રે...')}</div>
+            <div style="font-size:14px">${esc(e.event_place || '')}${e.event_date ? ' · ' + t('તા.') + ' ' + esc(e.event_date.split('-').reverse().join('-')) : ''}</div>
+          </div>
+          ${line('રસીદ નં.', '<b style="font-size:20px;color:var(--magenta)">' + e.receipt_no + '</b>')}
+          ${line('તારીખ', esc(e.created_at))}
+          ${line('મંડળ', esc(e.mandal_name))}
+          ${line('નામ', esc(e.devotee_name))}
+          ${line('સરનામું', esc(e.address))}
+          ${line('મો.નં.', esc(e.mobile))}
+          ${line('સેવા', esc(e.sevas.map((s) => s.name).join(', ')))}
+          ${line('સેવાની રકમ', '<span class="total">' + rupees(e.amount) + '/-</span>')}
+          ${line('ચુકવણી', PAYMENT[e.payment_mode] + (e.payment_ref ? ' (' + esc(e.payment_ref) + ')' : ''))}
+          ${line('અન્નકૂટ સેવક', esc(e.karyakar_name))}
+          ${line('મો.નં.', esc(e.karyakar_mobile))}
+          <div class="foot">● ${t('અન્નકૂટ સેવક દ્વારા આપને પ્રસાદ પહોંચાડવામાં આવશે.')}</div>`;
+      } catch (err) { $('#r').textContent = err.message; }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+// Database setup (uses Node's built-in SQLite - no extra install needed)
+const { DatabaseSync } = require('node:sqlite');
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const db = new DatabaseSync(path.join(DATA_DIR, 'annakut.db'));
+db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS mandals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  mobile TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin','karyakar')),
+  mandal_id INTEGER REFERENCES mandals(id),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  event_date TEXT,
+  place TEXT,
+  time_text TEXT,
+  is_active INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS seva_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES events(id),
+  receipt_no INTEGER NOT NULL,
+  mandal_id INTEGER NOT NULL REFERENCES mandals(id),
+  devotee_name TEXT NOT NULL,
+  address TEXT,
+  mobile TEXT NOT NULL,
+  whatsapp TEXT,
+  amount INTEGER NOT NULL,
+  payment_mode TEXT NOT NULL DEFAULT 'cash',
+  payment_ref TEXT,
+  paid INTEGER NOT NULL DEFAULT 1,
+  notes TEXT,
+  karyakar_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT,
+  UNIQUE (event_id, receipt_no)
+);
+
+CREATE TABLE IF NOT EXISTS entry_sevas (
+  entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+  seva_type_id INTEGER NOT NULL REFERENCES seva_types(id),
+  amount INTEGER NOT NULL,
+  PRIMARY KEY (entry_id, seva_type_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entries_event ON entries(event_id);
+CREATE INDEX IF NOT EXISTS idx_entries_mobile ON entries(mobile);
+CREATE INDEX IF NOT EXISTS idx_entries_karyakar ON entries(karyakar_id);
+`);
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = stored.split(':');
+  const test = crypto.scryptSync(password, salt, 64);
+  return crypto.timingSafeEqual(test, Buffer.from(hash, 'hex'));
+}
+
+// First run: create main admin, the seva list from the card, and this year's event
+function seed() {
+  const hasUsers = db.prepare('SELECT COUNT(*) AS c FROM users').get().c > 0;
+  if (hasUsers) return;
+
+  const adminMobile = process.env.ADMIN_MOBILE || '9999999999';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  db.prepare('INSERT INTO users (name, mobile, password_hash, role) VALUES (?, ?, ?, ?)')
+    .run('Main Admin', adminMobile, hashPassword(adminPassword), 'admin');
+
+  const sevas = [
+    ['બેકરી થાળ', 201], ['ફરસાણ થાળ', 501], ['મિષ્ટાન થાળ', 1001],
+    ['પૂર્ણ થાળ', 2501], ['અર્ધ અન્નકૂટની સેવા', 25001], ['પૂર્ણ અન્નકૂટની સેવા', 51001],
+  ];
+  const insSeva = db.prepare('INSERT INTO seva_types (name, amount, sort) VALUES (?, ?, ?)');
+  sevas.forEach(([name, amount], i) => insSeva.run(name, amount, i + 1));
+
+  db.prepare('INSERT INTO mandals (name) VALUES (?)').run('ખીજડી પ્લોટ');
+
+  db.prepare('INSERT INTO events (name, event_date, place, time_text, is_active) VALUES (?, ?, ?, ?, 1)')
+    .run(`અન્નકૂટોત્સવ ${new Date().getFullYear()}`, null,
+      'બી.એ.પી.એસ. શ્રી સ્વામિનારાયણ મંદિર, ખીજડી પ્લોટ, પોરબંદર', 'બપોરે ૧૨.૦૦ થી સાંજે ૭.૦૦ સુધી');
+
+  console.log(`\n  First run: admin created -> mobile ${adminMobile} / password ${adminPassword}`);
+  console.log('  Please login and change this password immediately.\n');
+}
+seed();
+
+module.exports = { db, hashPassword, verifyPassword };
