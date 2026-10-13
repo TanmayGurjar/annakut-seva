@@ -222,6 +222,11 @@ function dailyBackup() {
     backupTo(file);
     fs.readdirSync(BACKUP_DIR).filter((f) => /^annakut-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort().reverse()
       .slice(KEEP_BACKUPS).forEach((f) => fs.rmSync(path.join(BACKUP_DIR, f), { force: true }));
+    // Optional second copy off this disk, e.g. a Google Drive folder (set in settings.local.cmd)
+    if (process.env.BACKUP_COPY_DIR) {
+      fs.mkdirSync(process.env.BACKUP_COPY_DIR, { recursive: true });
+      fs.copyFileSync(file, path.join(process.env.BACKUP_COPY_DIR, path.basename(file)));
+    }
   } catch (e) {
     console.error('Backup failed:', e.message);
   }

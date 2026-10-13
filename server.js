@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
-const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE } = require('./db');
+const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -631,11 +631,17 @@ const timer = setInterval(() => {
   for (const key of failedLogins.keys()) failCount(key);
 }, 6 * 3600000);
 
-const server = app.listen(PORT, () => console.log(`Annakut Seva app running -> http://localhost:${PORT}`));
+// data/server.pid lets scripts\windows\stop-server.ps1 stop exactly this app
+const PID_FILE = path.join(DATA_DIR, 'server.pid');
+const server = app.listen(PORT, () => {
+  fs.writeFileSync(PID_FILE, String(process.pid));
+  console.log(`Annakut Seva app running -> http://localhost:${PORT}`);
+});
 
 // Close the database cleanly when stopped (Ctrl+C, service stop, host restart)
 function shutdown() {
   clearInterval(timer);
+  fs.rmSync(PID_FILE, { force: true });
   server.close(() => { db.close(); process.exit(0); });
   setTimeout(() => process.exit(0), 5000).unref();
 }
