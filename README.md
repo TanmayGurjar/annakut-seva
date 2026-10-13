@@ -74,13 +74,27 @@ data/backups/  automatic daily copies (last 30 days)
 - **Login:** "Remember me" keeps a phone logged in for 90 days (renewed while used). After 5 wrong passwords for a mobile number, that number is locked for 15 minutes.
 - When an admin resets a karyakar's password, or a user changes their own, their other devices are logged out.
 
-## Put it online (so karyakars can use it from their phones)
+## Put it online (this laptop, free)
 
-- **Option A (quick, at the mandir):** run it on one laptop. Phones on the same Wi-Fi open `http://<laptop-IP>:3000`
-  (find the IP with `ipconfig`).
-- **Option B (internet):** deploy to a small VPS (Hostinger, DigitalOcean, AWS Lightsail, ~₹400–500/month) or to Railway/Render
-  **with a persistent disk** mounted, and set `DATA_DIR` to that disk. Put it behind HTTPS (Caddy/Nginx or the host's built-in HTTPS).
-  Needs Node 22.13 or newer.
+Set up once (already done on this laptop):
+
+```
+winget install Cloudflare.cloudflared
+powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1
+```
+
+- The app and a free **Cloudflare quick tunnel** start hidden every time you log in to Windows,
+  and restart by themselves if they stop. Logs: `data\logs\server.log`, `data\logs\tunnel.log`.
+- The internet link looks like `https://<random-words>.trycloudflare.com` and **changes every time the laptop restarts**.
+  The current link is shown at the top of the admin dashboard (and the karyakar's "👥 મારી ટીમ" tab) with a WhatsApp share button.
+  Live Google Sheet formulas contain the link too, so re-create them after a restart (or buy a domain for a fixed link).
+- Keep the laptop plugged in, online and logged in to Windows during the collection days.
+- Stop: `scripts\windows\stop-server.ps1` · remove auto-start: `scripts\windows\uninstall-autostart.ps1`
+- Phones on the same Wi-Fi can still use `http://<laptop-IP>:3000`.
+- Settings (port, extra backup folder, tunnel off): copy `settings.local.example.cmd` to `settings.local.cmd`.
+
+**Moving to a paid server later** (Hostinger, DigitalOcean, Lightsail, ~₹400–500/month): copy the `data` folder,
+run `npm install && npm start` there (Node 22.13+) behind HTTPS (Caddy/Nginx), set `DATA_DIR` if the data lives elsewhere.
 
 ## Ideas for later
 
