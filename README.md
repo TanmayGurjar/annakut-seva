@@ -20,7 +20,19 @@ To use your own number from the start, delete the `data` folder and run:
 | Role | Can do |
 |---|---|
 | **Admin** (you) | Dashboard, all entries, edit/delete, Excel export, add karyakars, mandals, seva/thal list, create each year's event |
-| **Karyakar** | Log in with mobile + password, add seva entries, see/edit **only their own** entries, send WhatsApp receipts |
+| **Karyakar** (one area, e.g. Narsang Tekri) | Add seva entries; see/edit their own **and their annakut sevaks'** entries; add/approve annakut sevaks; team summary + Google Sheets |
+| **Annakut Sevak** (works under one karyakar) | Registers from the login page ("નોંધણી કરો"), can log in once their karyakar approves. Adds entries, sees/edits **only their own**, sends WhatsApp receipts |
+
+Only the admin creates karyakars. Annakut sevaks either register themselves (karyakar approves under **👥 મારી ટીમ**) or are added directly by their karyakar.
+
+## Summary in Google Sheets
+
+Dashboard (admin) and **👥 મારી ટીમ** (karyakar) show a team summary: each karyakar, their annakut sevaks, entries, amount, pending amount and a count for every seva (બેકરી / ફરસાણ / મિષ્ટાન ...), with a team total row. Filter by one seva with the dropdown.
+
+- **Download:** "⬇ સારાંશ" / "⬇ બધી એન્ટ્રી" → upload the file to Google Drive → "Open with Google Sheets".
+- **Live sheet (once the app is online):** "લાઈવ લિંક બનાવો" gives a formula like `=IMPORTDATA("https://<site>/sheets/<secret>/summary.csv")`.
+  Paste it in cell A1 of a new Google Sheet and it keeps itself updated (Google refreshes about every hour). Add `?seva_type_id=2` to the link for one seva only.
+  Keep the link secret; "નવી લિંક" makes the old one stop working.
 
 ## Pages
 

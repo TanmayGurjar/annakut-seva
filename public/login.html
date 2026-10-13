@@ -22,7 +22,30 @@
       <input name="password" type="password" autocomplete="current-password" required>
       <label class="check"><input type="checkbox" name="remember" checked> મને યાદ રાખો (આ ફોનમાં લૉગિન રહેવા દો)</label>
       <button class="block" type="submit">લૉગિન કરો</button>
+      <p style="text-align:center;margin:16px 0 0">નવા અન્નકૂટ સેવક છો? <button type="button" class="link-btn" id="showSignup">નોંધણી કરો</button></p>
     </form>
+    <form class="card hidden" id="signupForm">
+      <h2>અન્નકૂટ સેવક નોંધણી</h2>
+      <p class="hint">નોંધણી પછી તમારા કાર્યકર મંજૂરી આપશે, પછી તમે લૉગિન કરી શકશો.</p>
+      <label>તમારું નામ *</label>
+      <input name="name" required autocomplete="name">
+      <label>મોબાઇલ નંબર *</label>
+      <input name="mobile" type="tel" inputmode="numeric" maxlength="10" required autocomplete="username">
+      <label>પાસવર્ડ * (ઓછામાં ઓછા 6 અક્ષર)</label>
+      <input name="password" type="password" minlength="6" required autocomplete="new-password">
+      <label>મંડળ / વિસ્તાર *</label>
+      <select name="mandal_id" required></select>
+      <label>તમારા કાર્યકર *</label>
+      <select name="parent_id" required></select>
+      <button class="block" type="submit">નોંધણી કરો ✔</button>
+      <p style="text-align:center;margin:16px 0 0"><button type="button" class="link-btn" id="showLogin">← લૉગિન પર પાછા</button></p>
+    </form>
+    <div class="card ok-box hidden" id="signupDone">
+      <div class="big">🙏</div>
+      <h2>જય સ્વામિનારાયણ! નોંધણી થઈ ગઈ</h2>
+      <p>તમારા કાર્યકર મંજૂરી આપે પછી આ જ મોબાઇલ નંબર અને પાસવર્ડથી લૉગિન કરો.</p>
+      <button type="button" onclick="location.reload()">લૉગિન પર જાઓ</button>
+    </div>
     <form class="card hidden" id="changeForm">
       <h2>નવો પાસવર્ડ સેટ કરો</h2>
       <p style="color:var(--muted)">સુરક્ષા માટે, આગળ વધતા પહેલા તમારો પોતાનો પાસવર્ડ રાખો.</p>
@@ -67,6 +90,34 @@
         user = await api('/api/login', { method: 'POST', body: { mobile: lf.mobile.value, password: lf.password.value, remember: lf.remember.checked } });
         try { localStorage.setItem('mobile', lf.remember.checked ? lf.mobile.value : ''); } catch {}
         if (user.mustChange) { typedPassword = lf.password.value; showChange(); } else home(user);
+      } catch (e) { toast(e.message, true); }
+    });
+
+    // ----- annakut sevak sign-up -----
+    const sf = $('#signupForm');
+    let options = null;
+    function fillKaryakars() {
+      const list = options.karyakars.filter((k) => !sf.mandal_id.value || String(k.mandal_id) === sf.mandal_id.value);
+      sf.parent_id.innerHTML = `<option value="">${t('-- કાર્યકર પસંદ કરો --')}</option>` +
+        list.map((k) => `<option value="${k.id}">${esc(k.name)}</option>`).join('');
+    }
+    $('#showSignup').onclick = async () => {
+      try { options = options || await api('/api/signup-options'); } catch (e) { return toast(e.message, true); }
+      sf.mandal_id.innerHTML = `<option value="">${t('-- મંડળ પસંદ કરો --')}</option>` +
+        options.mandals.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+      fillKaryakars();
+      lf.classList.add('hidden'); sf.classList.remove('hidden');
+      sf.name.focus();
+    };
+    $('#showLogin').onclick = () => { sf.classList.add('hidden'); lf.classList.remove('hidden'); };
+    sf.mandal_id.addEventListener('change', fillKaryakars);
+    sf.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        await api('/api/signup', { method: 'POST', body: {
+          name: sf.name.value, mobile: sf.mobile.value, password: sf.password.value, parent_id: sf.parent_id.value } });
+        try { localStorage.setItem('mobile', sf.mobile.value); } catch {}
+        sf.classList.add('hidden'); $('#signupDone').classList.remove('hidden');
       } catch (e) { toast(e.message, true); }
     });
 

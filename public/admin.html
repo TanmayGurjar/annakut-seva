@@ -19,7 +19,7 @@
     <div class="tabs">
       <button data-tab="dash" class="active">📊 ડેશબોર્ડ</button>
       <button data-tab="entries">📋 બધી એન્ટ્રી</button>
-      <button data-tab="users">👥 કાર્યકર</button>
+      <button data-tab="users">👥 કાર્યકર / સેવક <span id="pendingBadge" class="badge pending hidden"></span></button>
       <button data-tab="mandals">🏘 મંડળ</button>
       <button data-tab="sevas">🍱 સેવા/થાળ</button>
       <button data-tab="events">📅 ઉત્સવ</button>
@@ -37,8 +37,14 @@
         <div class="card soft"><h3>થાળ / સેવા પ્રમાણે</h3><div class="table-wrap" id="bySeva"></div></div>
       </div>
       <div class="row">
-        <div class="card soft"><h3>કાર્યકર પ્રમાણે</h3><div class="table-wrap" id="byKaryakar"></div></div>
+        <div class="card soft"><h3>કાર્યકર ટીમ પ્રમાણે</h3><div class="table-wrap" id="byKaryakar"></div></div>
         <div class="card soft"><h3>ચુકવણી પ્રમાણે</h3><div class="table-wrap" id="byPayment"></div></div>
+      </div>
+      <div class="card soft">
+        <div class="toolbar"><h3 class="grow" style="margin:0">📊 ટીમ સારાંશ (કાર્યકર → અન્નકૂટ સેવક)</h3>
+          <select id="sumSeva" style="width:auto"></select></div>
+        <div class="table-wrap" id="summary"></div>
+        <div id="sheets"></div>
       </div>
     </section>
 
@@ -56,12 +62,12 @@
       </div>
       <div class="toolbar">
         <div class="grow"><b id="eCount">0</b> એન્ટ્રી · કુલ <b id="eTotal">₹ 0</b></div>
-        <button class="green small" onclick="exportCsv()">⬇ Excel (CSV)</button>
+        <button class="green small" onclick="exportCsv()">⬇ Google Sheets (CSV)</button>
         <a class="btn small secondary" href="/api/backup.db" title="Full database backup - keep a copy on Google Drive / pen drive">⬇ બેકઅપ</a>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>રસીદ</th><th>નામ</th><th>મોબાઇલ</th><th>મંડળ</th><th>સેવા</th><th class="num">રકમ</th><th>ચુકવણી</th><th>કાર્યકર</th><th>તારીખ</th><th></th></tr></thead>
+          <thead><tr><th>રસીદ</th><th>નામ</th><th>મોબાઇલ</th><th>મંડળ</th><th>સેવા</th><th class="num">રકમ</th><th>ચુકવણી</th><th>અન્નકૂટ સેવક</th><th>તારીખ</th><th></th></tr></thead>
           <tbody id="eBody"></tbody>
         </table>
       </div>
@@ -69,10 +75,10 @@
 
     <!-- USERS -->
     <section id="tab-users" class="hidden">
-      <div class="toolbar"><div class="grow">કાર્યકરોને અહીં ઉમેરો. તેઓ મોબાઇલ નંબર + પાસવર્ડથી લૉગિન કરશે.</div>
+      <div class="toolbar"><div class="grow">કાર્યકરોને અહીં ઉમેરો. તેઓ મોબાઇલ નંબર + પાસવર્ડથી લૉગિન કરશે. અન્નકૂટ સેવક પોતે નોંધણી કરે, કાર્યકર કે એડમિન મંજૂરી આપે.</div>
         <button onclick="editUser()">➕ નવો કાર્યકર</button></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>નામ</th><th>મોબાઇલ</th><th>ભૂમિકા</th><th>મંડળ</th><th class="num">એન્ટ્રી</th><th>સ્થિતિ</th><th></th></tr></thead>
+        <thead><tr><th>નામ</th><th>મોબાઇલ</th><th>ભૂમિકા</th><th>કાર્યકર</th><th>મંડળ</th><th class="num">એન્ટ્રી</th><th>સ્થિતિ</th><th></th></tr></thead>
         <tbody id="uBody"></tbody></table></div>
     </section>
 
@@ -134,7 +140,14 @@
       const opts = (all, list, label) => `<option value="">${t(all)}</option>` + list.map((x) => `<option value="${x.id}">${esc(label(x))}</option>`).join('');
       const [m, k, s] = [keep('#fMandal'), keep('#fKaryakar'), keep('#fSeva')];
       $('#fMandal').innerHTML = opts('બધા મંડળ', mandals, (x) => x.name); $('#fMandal').value = m;
-      $('#fKaryakar').innerHTML = opts('બધા કાર્યકર', users, (x) => x.name); $('#fKaryakar').value = k;
+      const leads = users.filter((x) => x.role === 'karyakar' && x.approved);
+      $('#fKaryakar').innerHTML = `<option value="">${t('બધા કાર્યકર')}</option>` +
+        leads.map((x) => `<option value="team:${x.id}">👥 ${esc(t('{0} ટીમ', x.name))}</option>`).join('') +
+        users.filter((x) => x.approved).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+      $('#fKaryakar').value = k;
+      $('#sumSeva').innerHTML = opts('બધી સેવા', sevaTypes, (x) => x.name); $('#sumSeva').value = keep('#sumSeva');
+      const pending = users.filter((x) => !x.approved).length;
+      $('#pendingBadge').textContent = pending; $('#pendingBadge').classList.toggle('hidden', !pending);
       $('#fSeva').innerHTML = opts('બધી સેવા', sevaTypes, (x) => x.name); $('#fSeva').value = s;
     }
 
@@ -147,14 +160,21 @@
       $('#byMandal').innerHTML = table(s.byMandal, [['મંડળ', (r) => esc(r.name)], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
       $('#bySeva').innerHTML = table(s.bySeva, [['સેવા', (r) => esc(r.name)], ['રકમ', (r) => rupees(r.amount), 'num'], ['સંખ્યા', (r) => r.count, 'num']]);
       $('#byKaryakar').innerHTML = table(s.byKaryakar, [['કાર્યકર', (r) => esc(r.name)], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
+      await loadSummary();
+      await sheetsBox($('#sheets'), summaryQuery);
       $('#byPayment').innerHTML = table(s.byPayment, [['ચુકવણી', (r) => PAYMENT[r.payment_mode]], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
     }
+
+    const summaryQuery = () => ($('#sumSeva').value ? `seva_type_id=${$('#sumSeva').value}` : '');
+    async function loadSummary() { $('#summary').innerHTML = summaryTable(await api('/api/summary?' + summaryQuery())); }
+    $('#sumSeva').addEventListener('change', () => loadSummary().catch((e) => toast(e.message, true)));
 
     // ----- entries -----
     function filterQuery() {
       const p = new URLSearchParams();
       const add = (k, id) => { const v = $(id).value.trim(); if (v) p.set(k, v); };
-      add('q', '#fQ'); add('mandal_id', '#fMandal'); add('karyakar_id', '#fKaryakar'); add('seva_type_id', '#fSeva'); add('payment_mode', '#fPay');
+      add('q', '#fQ'); add('mandal_id', '#fMandal'); const who = $('#fKaryakar').value;
+      if (who) p.set(who.startsWith('team:') ? 'team_id' : 'karyakar_id', who.replace('team:', '')); add('seva_type_id', '#fSeva'); add('payment_mode', '#fPay');
       return p.toString();
     }
     async function loadEntries() {
@@ -165,7 +185,7 @@
         <td>${e.mobile}${e.whatsapp && e.whatsapp !== e.mobile ? '<br><small>WA ' + e.whatsapp + '</small>' : ''}</td>
         <td>${esc(e.mandal_name)}</td><td>${esc(e.seva_names || '-')}</td><td class="num">${rupees(e.amount)}</td>
         <td><span class="badge ${e.paid ? '' : 'pending'}">${PAYMENT[e.payment_mode]}</span></td>
-        <td>${esc(e.karyakar_name)}</td><td><small>${esc(e.created_at)}</small></td>
+        <td>${esc(e.karyakar_name)}${e.team_name !== e.karyakar_name ? '<br><small>👥 ' + esc(e.team_name) + '</small>' : ''}</td><td><small>${esc(e.created_at)}</small></td>
         <td style="white-space:nowrap"><a class="btn small secondary" href="/app.html?edit=${e.id}">✏</a>
           <a class="btn small secondary" target="_blank" href="/receipt.html?id=${e.id}">🖨</a>
           <button class="small danger" onclick="delEntry(${e.id}, ${e.receipt_no})">🗑</button></td></tr>`).join('')
@@ -181,19 +201,32 @@
 
     // ----- users -----
     function renderUsers() {
-      $('#uBody').innerHTML = users.map((u) => `<tr class="${u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td>${u.mobile}</td>
-        <td>${t(u.role === 'admin' ? 'એડમિન' : 'કાર્યકર')}</td><td>${esc(u.mandal_name || '-')}</td><td class="num">${u.entry_count}</td>
-        <td>${status(u.active)}</td><td><button class="small secondary" onclick="editUser(${u.id})">✏</button></td></tr>`).join('');
+      $('#uBody').innerHTML = users.map((u) => `<tr class="${!u.approved ? 'pending-row' : u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td>${u.mobile}</td>
+        <td>${roleBadge(u.role)}</td><td>${esc(u.parent_name || '')}</td><td>${esc(u.mandal_name || '-')}</td><td class="num">${u.entry_count}</td>
+        <td>${u.approved ? status(u.active) : '🔔 ' + t('મંજૂરી બાકી')}</td>
+        <td style="white-space:nowrap">${u.approved ? '' : `<button class="small green" onclick="approveUser(${u.id})">✔</button>
+          <button class="small danger" onclick="rejectUser(${u.id})">✖</button>`}
+          <button class="small secondary" onclick="editUser(${u.id})">✏</button></td></tr>`).join('');
+    }
+    async function approveUser(id) {
+      try { await api(`/api/users/${id}/approve`, { method: 'POST' }); toast(t('મંજૂર થયું ✔')); refresh(); } catch (e) { toast(e.message, true); }
+    }
+    async function rejectUser(id) {
+      if (!confirm(t('{0} ની નોંધણી નામંજૂર કરવી છે?', users.find((u) => u.id === id).name))) return;
+      try { await api(`/api/users/${id}`, { method: 'DELETE' }); refresh(); } catch (e) { toast(e.message, true); }
     }
     function editUser(id) {
-      const u = users.find((x) => x.id === id) || { active: 1, role: 'karyakar' };
+      const u = users.find((x) => x.id === id) || { active: 1, approved: 1, role: 'karyakar' };
       openDialog(id ? 'કાર્યકર સુધારો' : 'નવો કાર્યકર', [
         { name: 'name', label: 'નામ *', value: u.name },
         { name: 'mobile', label: 'મોબાઇલ નં. * (લૉગિન માટે)', type: 'tel', value: u.mobile },
         { name: 'password', label: id ? 'નવો પાસવર્ડ (ખાલી રાખો તો બદલાશે નહીં)' : 'પાસવર્ડ * (min 6)', type: 'text' },
         { name: 'mandal_id', label: 'મંડળ', type: 'select', value: u.mandal_id, options: [['', '-- કોઈ નહીં --'], ...mandals.map((m) => [m.id, m.name])] },
-        { name: 'role', label: 'ભૂમિકા', type: 'select', value: u.role, options: [['karyakar', 'કાર્યકર'], ['admin', 'એડમિન']] },
+        { name: 'role', label: 'ભૂમિકા', type: 'select', value: u.role, options: [['karyakar', 'કાર્યકર'], ['sevak', 'અન્નકૂટ સેવક'], ['admin', 'એડમિન']] },
+        { name: 'parent_id', label: 'કાર્યકર (ફક્ત અન્નકૂટ સેવક માટે)', type: 'select', value: u.parent_id,
+          options: [['', '-- કોઈ નહીં --'], ...users.filter((x) => x.role === 'karyakar' && x.id !== u.id).map((x) => [x.id, x.name])] },
         { name: 'active', label: 'ચાલુ (લૉગિન કરી શકે)', type: 'checkbox', value: u.active },
+        { name: 'approved', label: 'મંજૂર', type: 'checkbox', value: u.approved },
       ], (v) => api(id ? `/api/users/${id}` : '/api/users', { method: id ? 'PUT' : 'POST', body: v }));
     }
 

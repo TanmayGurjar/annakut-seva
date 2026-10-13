@@ -10,6 +10,24 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new DatabaseSync(path.join(DATA_DIR, 'annakut.db'));
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
 
+// Roles: admin > karyakar (looks after one area) > sevak (annakut sevak, works under a karyakar via parent_id)
+function usersTable(name) {
+  return `CREATE TABLE IF NOT EXISTS ${name} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  mobile TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin','karyakar','sevak')),
+  mandal_id INTEGER REFERENCES mandals(id),
+  parent_id INTEGER REFERENCES users(id),
+  active INTEGER NOT NULL DEFAULT 1,
+  approved INTEGER NOT NULL DEFAULT 1,
+  must_change INTEGER NOT NULL DEFAULT 0,
+  sheet_token TEXT UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);`;
+}
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS mandals (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,16 +35,7 @@ CREATE TABLE IF NOT EXISTS mandals (
   active INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  mobile TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin','karyakar')),
-  mandal_id INTEGER REFERENCES mandals(id),
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
+${usersTable('users')}
 
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
@@ -105,6 +114,21 @@ if (!userCols.includes('must_change')) {
   db.prepare('SELECT id, password_hash FROM users').all()
     .forEach((u) => { if (verifyPassword(DEFAULT_PASSWORD, u.password_hash)) setFlag.run(u.id); });
 }
+
+// Upgrade older databases to the admin > karyakar > sevak hierarchy (SQLite needs a table rebuild for this)
+const usersSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get().sql;
+if (!usersSql.includes("'sevak'")) {
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec(`BEGIN;
+    ${usersTable('users_new')}
+    INSERT INTO users_new (id, name, mobile, password_hash, role, mandal_id, active, must_change, created_at)
+      SELECT id, name, mobile, password_hash, role, mandal_id, active, must_change, created_at FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_new RENAME TO users;
+    COMMIT;`);
+  db.exec('PRAGMA foreign_keys = ON');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_users_parent ON users(parent_id)');
 
 // First run: create main admin, the seva list from the card, and this year's event
 function seed() {

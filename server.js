@@ -86,9 +86,9 @@ function addFail(key) {
 function auth(req, res, next) {
   const token = getCookie(req, 'sid');
   const user = token && db.prepare(`
-    SELECT u.id, u.name, u.mobile, u.role, u.mandal_id, u.must_change, s.expires_at, s.remember FROM sessions s
+    SELECT u.id, u.name, u.mobile, u.role, u.mandal_id, u.parent_id, u.must_change, s.expires_at, s.remember FROM sessions s
     JOIN users u ON u.id = s.user_id
-    WHERE s.token = ? AND s.expires_at > ? AND u.active = 1`).get(token, Date.now());
+    WHERE s.token = ? AND s.expires_at > ? AND u.active = 1 AND u.approved = 1`).get(token, Date.now());
   if (!user) return res.status(401).json({ error: 'કૃપા કરી લૉગિન કરો' });
   // Keep remembered logins alive while the app is used (renewed at most once a day)
   if (user.remember && user.expires_at - Date.now() < (SESSION_DAYS - 1) * 86400000) {
@@ -104,6 +104,8 @@ function auth(req, res, next) {
   next();
 }
 const adminOnly = (req, res, next) => (req.user.role === 'admin' ? next() : res.status(403).json({ error: 'ફક્ત એડમિન માટે' }));
+// Admin or karyakar (karyakars only ever see their own team)
+const leadOnly = (req, res, next) => (['admin', 'karyakar'].includes(req.user.role) ? next() : res.status(403).json({ error: 'ફક્ત કાર્યકર / એડમિન માટે' }));
 
 app.post('/api/login', h((req, res) => {
   const mobile = cleanMobile(req.body.mobile);
@@ -117,6 +119,7 @@ app.post('/api/login', h((req, res) => {
     fail(401, 'મોબાઇલ નંબર અથવા પાસવર્ડ ખોટો છે');
   }
   failedLogins.delete(keys[0]);
+  if (!user.approved) fail(403, 'તમારી નોંધણી હજુ મંજૂર થઈ નથી. તમારા કાર્યકરને જણાવો.');
   const remember = req.body.remember !== false;
   const token = crypto.randomBytes(32).toString('hex');
   const life = remember ? SESSION_DAYS * 86400000 : SHORT_SESSION_HOURS * 3600000;
@@ -139,6 +142,37 @@ app.post('/api/logout', (req, res) => {
   res.setHeader('Set-Cookie', 'sid=; HttpOnly; Path=/; Max-Age=0');
   res.json({ ok: true });
 });
+
+// ---------- annakut sevak self sign-up (needs approval by their karyakar or admin) ----------
+app.get('/api/signup-options', (req, res) => {
+  res.json({
+    mandals: db.prepare('SELECT id, name FROM mandals WHERE active = 1 ORDER BY name').all(),
+    karyakars: db.prepare(`SELECT id, name, mandal_id FROM users
+      WHERE role = 'karyakar' AND active = 1 AND approved = 1 ORDER BY name`).all(),
+  });
+});
+
+const SIGNUPS_PER_HOUR = 5;
+const signups = new Map(); // ip -> [timestamps]
+app.post('/api/signup', h((req, res) => {
+  const ip = clientIp(req);
+  const recent = (signups.get(ip) || []).filter((ts) => Date.now() - ts < 3600000);
+  if (recent.length >= SIGNUPS_PER_HOUR) fail(429, 'ઘણી નોંધણી થઈ. થોડી વાર પછી પ્રયત્ન કરો.');
+  const name = str(req.body.name);
+  const mobile = cleanMobile(req.body.mobile);
+  const password = String(req.body.password || '');
+  if (!name) fail(400, 'નામ લખો');
+  if (mobile.length !== 10) fail(400, 'સાચો 10 આંકડાનો મોબાઇલ નંબર લખો');
+  if (password.length < 6) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
+  const lead = db.prepare("SELECT id, mandal_id FROM users WHERE id = ? AND role = 'karyakar' AND active = 1 AND approved = 1")
+    .get(toInt(req.body.parent_id));
+  if (!lead) fail(400, 'તમારા કાર્યકર પસંદ કરો');
+  if (db.prepare('SELECT 1 FROM users WHERE mobile = ?').get(mobile)) fail(400, 'આ મોબાઇલ નંબરથી પહેલેથી નોંધણી થયેલી છે');
+  db.prepare(`INSERT INTO users (name, mobile, password_hash, role, mandal_id, parent_id, approved)
+    VALUES (?, ?, ?, 'sevak', ?, ?, 0)`).run(name, mobile, hashPassword(password), lead.mandal_id, lead.id);
+  signups.set(ip, [...recent, Date.now()]);
+  res.json({ ok: true });
+}));
 
 app.use('/api', auth);
 
@@ -168,7 +202,7 @@ app.get('/api/meta', (req, res) => {
 // ---------- entries ----------
 function loadEntry(id) {
   const e = db.prepare(`
-    SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile,
+    SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile, u.parent_id AS entered_by_parent,
       ev.name AS event_name, ev.event_date, ev.place AS event_place, ev.time_text AS event_time
     FROM entries e JOIN mandals m ON m.id = e.mandal_id JOIN users u ON u.id = e.karyakar_id
     JOIN events ev ON ev.id = e.event_id WHERE e.id = ?`).get(id);
@@ -177,8 +211,20 @@ function loadEntry(id) {
   return e;
 }
 
+// entries.karyakar_id = whoever entered it (karyakar, sevak or admin).
+// Admin: everything. Karyakar: own + their sevaks' entries. Sevak: only own.
 function canAccess(user, entry) {
-  return user.role === 'admin' || entry.karyakar_id === user.id;
+  return user.role === 'admin' || entry.karyakar_id === user.id
+    || (user.role === 'karyakar' && entry.entered_by_parent === user.id);
+}
+
+// SQL condition limiting entries (alias e) to what this user may see
+function scopeSql(user) {
+  if (user.role === 'admin') return { sql: '1 = 1', params: [] };
+  if (user.role === 'karyakar') {
+    return { sql: '(e.karyakar_id = ? OR e.karyakar_id IN (SELECT id FROM users WHERE parent_id = ?))', params: [user.id, user.id] };
+  }
+  return { sql: 'e.karyakar_id = ?', params: [user.id] };
 }
 
 function validateEntry(body) {
@@ -209,12 +255,16 @@ function saveSevas(entryId, sevaIds) {
   [...new Set(sevaIds)].forEach((sid) => ins.run(entryId, sid));
 }
 
-// Build a WHERE clause from list filters; karyakars always only see their own entries
+// Build a WHERE clause from list filters, always limited to what this user may see
 function entryFilters(req) {
-  const where = ['e.event_id = ?'];
-  const params = [toInt(req.query.event_id) || activeEvent()?.id || 0];
-  if (req.user.role !== 'admin') { where.push('e.karyakar_id = ?'); params.push(req.user.id); }
-  else if (req.query.karyakar_id) { where.push('e.karyakar_id = ?'); params.push(toInt(req.query.karyakar_id)); }
+  const scope = scopeSql(req.user);
+  const where = ['e.event_id = ?', scope.sql];
+  const params = [toInt(req.query.event_id) || activeEvent()?.id || 0, ...scope.params];
+  if (req.query.karyakar_id) { where.push('e.karyakar_id = ?'); params.push(toInt(req.query.karyakar_id)); }
+  if (req.query.team_id) { // a karyakar together with all their sevaks
+    where.push('(e.karyakar_id = ? OR e.karyakar_id IN (SELECT id FROM users WHERE parent_id = ?))');
+    params.push(toInt(req.query.team_id), toInt(req.query.team_id));
+  }
   if (req.query.mandal_id) { where.push('e.mandal_id = ?'); params.push(toInt(req.query.mandal_id)); }
   if (req.query.seva_type_id) { where.push('EXISTS (SELECT 1 FROM entry_sevas x WHERE x.entry_id = e.id AND x.seva_type_id = ?)'); params.push(toInt(req.query.seva_type_id)); }
   if (req.query.payment_mode) { where.push('e.payment_mode = ?'); params.push(String(req.query.payment_mode)); }
@@ -227,9 +277,9 @@ function entryFilters(req) {
 }
 
 const LIST_SQL = `
-  SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name,
+  SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile, COALESCE(p.name, u.name) AS team_name,
     (SELECT group_concat(st.name, ', ') FROM entry_sevas es JOIN seva_types st ON st.id = es.seva_type_id WHERE es.entry_id = e.id) AS seva_names
-  FROM entries e JOIN mandals m ON m.id = e.mandal_id JOIN users u ON u.id = e.karyakar_id`;
+  FROM entries e JOIN mandals m ON m.id = e.mandal_id JOIN users u ON u.id = e.karyakar_id LEFT JOIN users p ON p.id = u.parent_id`;
 
 app.get('/api/entries', h((req, res) => {
   const f = entryFilters(req);
@@ -304,63 +354,188 @@ app.get('/api/stats', adminOnly, h((req, res) => {
       LEFT JOIN entries e ON e.mandal_id = m.id AND e.event_id = ? GROUP BY m.id ORDER BY total DESC`),
     bySeva: all(`SELECT st.name, st.amount, (SELECT COUNT(*) FROM entry_sevas es JOIN entries e ON e.id = es.entry_id
       WHERE es.seva_type_id = st.id AND e.event_id = ?) AS count FROM seva_types st ORDER BY st.sort`),
-    byKaryakar: all(`SELECT u.name, u.mobile, COUNT(e.id) AS count, COALESCE(SUM(e.amount),0) AS total FROM users u
-      LEFT JOIN entries e ON e.karyakar_id = u.id AND e.event_id = ? GROUP BY u.id HAVING count > 0 OR u.role = 'karyakar'
-      ORDER BY total DESC`),
+    // Each karyakar's whole team: their own entries + their annakut sevaks' entries
+    byKaryakar: all(`SELECT t.name, t.mobile, COUNT(e.id) AS count, COALESCE(SUM(e.amount),0) AS total FROM users t
+      JOIN users u ON u.id = t.id OR u.parent_id = t.id
+      LEFT JOIN entries e ON e.karyakar_id = u.id AND e.event_id = ?
+      WHERE t.role IN ('admin', 'karyakar') GROUP BY t.id HAVING count > 0 OR t.role = 'karyakar' ORDER BY total DESC`),
     byPayment: all(`SELECT payment_mode, COUNT(*) AS count, SUM(amount) AS total FROM entries WHERE event_id = ? GROUP BY payment_mode`),
   });
 }));
 
-app.get('/api/export.csv', adminOnly, h((req, res) => {
+// Team summary: one row per karyakar / annakut sevak with entry count, amount and count per seva type,
+// plus a total row for each karyakar's team. Filters: event_id, seva_type_id, mandal_id, payment_mode.
+function buildSummary(req) {
+  const user = req.user;
+  const sevaTypes = db.prepare('SELECT id, name, amount FROM seva_types ORDER BY sort, id').all();
+  const people = db.prepare(`SELECT u.id, u.name, u.mobile, u.role, u.parent_id, m.name AS mandal_name,
+      COALESCE(p.name, u.name) AS team_name, COALESCE(u.parent_id, u.id) AS team_id
+    FROM users u LEFT JOIN mandals m ON m.id = u.mandal_id LEFT JOIN users p ON p.id = u.parent_id
+    WHERE u.approved = 1 AND ${user.role === 'admin' ? '1 = 1' : '(u.id = ? OR u.parent_id = ?)'}
+    ORDER BY team_name, team_id, CASE u.role WHEN 'sevak' THEN 1 ELSE 0 END, u.name`)
+    .all(...(user.role === 'admin' ? [] : [user.id, user.id]));
+  const f = entryFilters(req);
+  const totals = new Map(db.prepare(`SELECT e.karyakar_id AS uid, COUNT(*) AS count, SUM(e.amount) AS total,
+      SUM(CASE WHEN e.paid = 0 THEN e.amount ELSE 0 END) AS pending FROM entries e WHERE ${f.sql} GROUP BY e.karyakar_id`)
+    .all(...f.params).map((r) => [r.uid, r]));
+  const perSeva = db.prepare(`SELECT e.karyakar_id AS uid, es.seva_type_id AS sid, COUNT(*) AS c
+      FROM entries e JOIN entry_sevas es ON es.entry_id = e.id WHERE ${f.sql} GROUP BY 1, 2`).all(...f.params);
+
+  const blank = () => ({ count: 0, total: 0, pending: 0, sevas: Object.fromEntries(sevaTypes.map((s) => [s.id, 0])) });
+  const rows = [];
+  let team = null;
+  for (const p of people) {
+    const r = { type: 'person', ...p, ...blank(), ...(totals.get(p.id) || {}) };
+    r.sevas = blank().sevas;
+    perSeva.filter((x) => x.uid === p.id).forEach((x) => { r.sevas[x.sid] = x.c; });
+    // Admins only show up when they entered something themselves
+    if (p.role === 'admin' && !r.count) continue;
+    if (!team || team.team_id !== p.team_id) {
+      team = { type: 'team', team_id: p.team_id, team_name: p.team_name, name: p.team_name, members: 0, ...blank() };
+      rows.push(team);
+    }
+    rows.splice(rows.indexOf(team), 0, r); // people first, team total after them
+    team.members++;
+    team.count += r.count; team.total += r.total; team.pending += r.pending;
+    sevaTypes.forEach((s) => { team.sevas[s.id] += r.sevas[s.id]; });
+  }
+  return { sevaTypes, rows };
+}
+
+const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+const toCsv = (header, lines) => [header, ...lines].map((l) => l.map(csvCell).join(',')).join('\r\n');
+const ROLE_NAME = { admin: 'એડમિન', karyakar: 'કાર્યકર', sevak: 'અન્નકૂટ સેવક' };
+
+function summaryCsv(req) {
+  const { sevaTypes, rows } = buildSummary(req);
+  return toCsv(
+    ['કાર્યકર (ટીમ)', 'નામ', 'ભૂમિકા', 'મોબાઇલ', 'મંડળ', 'એન્ટ્રી', 'કુલ રકમ', 'બાકી રકમ', ...sevaTypes.map((s) => s.name)],
+    rows.map((r) => r.type === 'team'
+      ? [r.team_name, `કુલ - ${r.team_name} ટીમ`, '', '', '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]
+      : [r.team_name, r.name, ROLE_NAME[r.role], r.mobile, r.mandal_name || '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]));
+}
+
+function entriesCsv(req) {
   const f = entryFilters(req);
   const rows = db.prepare(`${LIST_SQL} WHERE ${f.sql} ORDER BY e.receipt_no`).all(...f.params);
   const cols = [['receipt_no', 'રસીદ નં'], ['created_at', 'તારીખ'], ['mandal_name', 'મંડળ'], ['devotee_name', 'નામ'],
     ['address', 'સરનામું'], ['mobile', 'મોબાઇલ'], ['whatsapp', 'WhatsApp'], ['seva_names', 'સેવા'], ['amount', 'રકમ'],
-    ['payment_mode', 'ચુકવણી'], ['payment_ref', 'Ref'], ['karyakar_name', 'અન્નકૂટ સેવક'], ['notes', 'નોંધ']];
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const csv = [cols.map((c) => esc(c[1])).join(','), ...rows.map((r) => cols.map((c) => esc(r[c[0]])).join(','))].join('\r\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="annakut-entries.csv"');
-  res.send('﻿' + csv); // BOM so Excel shows Gujarati correctly
-}));
+    ['payment_mode', 'ચુકવણી'], ['payment_ref', 'Ref'], ['karyakar_name', 'અન્નકૂટ સેવક'], ['team_name', 'કાર્યકર (ટીમ)'], ['notes', 'નોંધ']];
+  return toCsv(cols.map((c) => c[1]), rows.map((r) => cols.map((c) => r[c[0]])));
+}
 
-// ---------- admin: users (karyakars) ----------
-app.get('/api/users', adminOnly, (req, res) => {
-  res.json(db.prepare(`SELECT u.id, u.name, u.mobile, u.role, u.mandal_id, u.active, m.name AS mandal_name,
-    (SELECT COUNT(*) FROM entries e WHERE e.karyakar_id = u.id) AS entry_count
-    FROM users u LEFT JOIN mandals m ON m.id = u.mandal_id ORDER BY u.role, u.name`).all());
+function sendCsv(res, csv, filename) {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  if (filename) res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(filename ? '﻿' + csv : csv); // BOM for downloaded files so Gujarati always opens correctly
+}
+
+app.get('/api/summary', leadOnly, h((req, res) => res.json(buildSummary(req))));
+app.get('/api/summary.csv', leadOnly, h((req, res) => sendCsv(res, summaryCsv(req), 'annakut-summary.csv')));
+app.get('/api/export.csv', leadOnly, h((req, res) => sendCsv(res, entriesCsv(req), 'annakut-entries.csv')));
+
+// ---------- live Google Sheets links ----------
+// A secret link per admin/karyakar. In Google Sheets: =IMPORTDATA("https://<site>/sheets/<token>/summary.csv")
+// Google refreshes it automatically (about every hour). Only works once the app is online.
+app.get('/api/me/sheet-link', leadOnly, (req, res) => {
+  res.json({ token: db.prepare('SELECT sheet_token FROM users WHERE id = ?').get(req.user.id).sheet_token });
+});
+app.post('/api/me/sheet-link', leadOnly, (req, res) => {
+  const token = crypto.randomBytes(24).toString('hex');
+  db.prepare('UPDATE users SET sheet_token = ? WHERE id = ?').run(token, req.user.id);
+  res.json({ token });
 });
 
-function userData(body) {
+function sheetUser(req, res, next) {
+  const user = /^[0-9a-f]{48}$/.test(req.params.token) && db.prepare(`SELECT id, name, role, mandal_id, parent_id FROM users
+    WHERE sheet_token = ? AND active = 1 AND approved = 1 AND role IN ('admin', 'karyakar')`).get(req.params.token);
+  if (!user) return res.status(404).send('Link not valid');
+  req.user = user;
+  next();
+}
+app.get('/sheets/:token/summary.csv', sheetUser, h((req, res) => sendCsv(res, summaryCsv(req))));
+app.get('/sheets/:token/entries.csv', sheetUser, h((req, res) => sendCsv(res, entriesCsv(req))));
+
+// ---------- users: admin manages everyone, a karyakar manages their own annakut sevaks ----------
+app.get('/api/users', leadOnly, (req, res) => {
+  const mine = req.user.role === 'karyakar';
+  res.json(db.prepare(`SELECT u.id, u.name, u.mobile, u.role, u.mandal_id, u.parent_id, u.active, u.approved,
+    m.name AS mandal_name, p.name AS parent_name, u.created_at,
+    (SELECT COUNT(*) FROM entries e WHERE e.karyakar_id = u.id) AS entry_count,
+    (SELECT COALESCE(SUM(amount), 0) FROM entries e WHERE e.karyakar_id = u.id AND e.event_id = ?) AS event_total,
+    (SELECT COUNT(*) FROM entries e WHERE e.karyakar_id = u.id AND e.event_id = ?) AS event_count
+    FROM users u LEFT JOIN mandals m ON m.id = u.mandal_id LEFT JOIN users p ON p.id = u.parent_id
+    ${mine ? 'WHERE u.parent_id = ?' : ''}
+    ORDER BY u.approved, CASE u.role WHEN 'admin' THEN 0 WHEN 'karyakar' THEN 1 ELSE 2 END, u.name`)
+    .all(...[activeEvent()?.id || 0, activeEvent()?.id || 0], ...(mine ? [req.user.id] : [])));
+});
+
+// Clean up a user form. Karyakars can only ever create/edit annakut sevaks under themselves.
+function userData(body, actor) {
   const d = {
     name: str(body.name), mobile: cleanMobile(body.mobile),
-    role: body.role === 'admin' ? 'admin' : 'karyakar',
-    mandal_id: toInt(body.mandal_id) || null, active: body.active === false || body.active === 0 ? 0 : 1,
+    role: actor.role === 'admin' && ['admin', 'karyakar', 'sevak'].includes(body.role) ? body.role : (actor.role === 'admin' ? 'karyakar' : 'sevak'),
+    mandal_id: toInt(body.mandal_id) || null, parent_id: null,
+    active: body.active === false || body.active === 0 ? 0 : 1,
+    approved: body.approved === false || body.approved === 0 ? 0 : 1,
   };
   if (!d.name) fail(400, 'નામ લખો');
   if (d.mobile.length !== 10) fail(400, 'સાચો 10 આંકડાનો મોબાઇલ નંબર લખો');
+  if (d.role === 'sevak') {
+    const lead = db.prepare("SELECT id, mandal_id FROM users WHERE id = ? AND role = 'karyakar'")
+      .get(actor.role === 'admin' ? toInt(body.parent_id) : actor.id);
+    if (!lead) fail(400, 'તમારા કાર્યકર પસંદ કરો');
+    d.parent_id = lead.id;
+    d.mandal_id = lead.mandal_id; // a sevak works in their karyakar's area
+  }
+  if (body.password && String(body.password).length < 6) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
   return d;
 }
 
-app.post('/api/users', adminOnly, h((req, res) => {
-  const d = userData(req.body);
-  if (!req.body.password || String(req.body.password).length < 6) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
-  db.prepare('INSERT INTO users (name, mobile, password_hash, role, mandal_id, active) VALUES (?,?,?,?,?,?)')
-    .run(d.name, d.mobile, hashPassword(String(req.body.password)), d.role, d.mandal_id, d.active);
+// Karyakars may only touch their own annakut sevaks
+function editableUser(req) {
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(toInt(req.params.id));
+  if (!target || (req.user.role !== 'admin' && target.parent_id !== req.user.id)) fail(404, 'મળ્યું નથી');
+  return target;
+}
+
+app.post('/api/users', leadOnly, h((req, res) => {
+  const d = userData(req.body, req.user);
+  if (!req.body.password) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
+  db.prepare('INSERT INTO users (name, mobile, password_hash, role, mandal_id, parent_id, active, approved) VALUES (?,?,?,?,?,?,?,1)')
+    .run(d.name, d.mobile, hashPassword(String(req.body.password)), d.role, d.mandal_id, d.parent_id, d.active);
   res.json({ ok: true });
 }));
 
-app.put('/api/users/:id', adminOnly, h((req, res) => {
-  const id = toInt(req.params.id);
-  const d = userData(req.body);
+app.put('/api/users/:id', leadOnly, h((req, res) => {
+  const target = editableUser(req);
+  const id = target.id;
+  const d = userData(req.body, req.user);
   if (id === req.user.id && (d.role !== 'admin' || !d.active)) fail(400, 'તમે પોતાને એડમિન માંથી દૂર ન કરી શકો');
-  db.prepare('UPDATE users SET name=?, mobile=?, role=?, mandal_id=?, active=? WHERE id=?')
-    .run(d.name, d.mobile, d.role, d.mandal_id, d.active, id);
-  if (req.body.password) {
-    if (String(req.body.password).length < 6) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
-    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(String(req.body.password)), id);
+  if (d.role !== 'karyakar' && db.prepare('SELECT 1 FROM users WHERE parent_id = ?').get(id)) {
+    fail(400, 'આ કાર્યકર નીચે અન્નકૂટ સેવક છે. પહેલા તેમને બીજા કાર્યકર નીચે મૂકો.');
   }
-  if (!d.active || (req.body.password && id !== req.user.id)) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+  transaction(() => {
+    db.prepare('UPDATE users SET name=?, mobile=?, role=?, mandal_id=?, parent_id=?, active=?, approved=? WHERE id=?')
+      .run(d.name, d.mobile, d.role, d.mandal_id, d.parent_id, d.active, d.approved, id);
+    // Moving a karyakar to a new area moves their sevaks too
+    if (d.role === 'karyakar') db.prepare('UPDATE users SET mandal_id = ? WHERE parent_id = ?').run(d.mandal_id, id);
+    if (req.body.password) db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(String(req.body.password)), id);
+  });
+  if (!d.active || !d.approved || (req.body.password && id !== req.user.id)) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+  res.json({ ok: true });
+}));
+
+// Approve a self-registered annakut sevak (or remove the request)
+app.post('/api/users/:id/approve', leadOnly, h((req, res) => {
+  const target = editableUser(req);
+  db.prepare('UPDATE users SET approved = 1, active = 1 WHERE id = ?').run(target.id);
+  res.json({ ok: true });
+}));
+app.delete('/api/users/:id', leadOnly, h((req, res) => {
+  const target = editableUser(req);
+  if (target.approved) fail(400, 'ફક્ત બાકી નોંધણી જ કાઢી શકાય. બીજાને "બંધ" કરો.');
+  db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
   res.json({ ok: true });
 }));
 

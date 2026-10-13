@@ -117,3 +117,13 @@ dialog::backdrop { background: rgba(0,0,0,.4); }
 .login-hero .sub { color: var(--magenta); font-size: 22px; font-weight: 700; }
 
 .lang-btn.floating { position: fixed; top: 12px; right: 12px; z-index: 10; }
+
+/* team summary + pending approvals */
+tr.team-row td { background: #f3ecfa; font-weight: 700; color: var(--purple); border-bottom: 2px solid var(--purple); }
+tr.pending-row td { background: #fff4e0; }
+.badge.role-karyakar { background: #e6ecfb; color: var(--blue); }
+.badge.role-sevak { background: #e7f6ec; color: var(--green); }
+.badge.role-admin { background: #fdeef7; color: var(--magenta); }
+.link-btn { background: none; border: 0; color: var(--magenta); text-decoration: underline; padding: 4px; font-weight: 600; cursor: pointer; }
+.formula { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: #f7efdc; border-radius: 8px; padding: 10px; word-break: break-all; }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0; }

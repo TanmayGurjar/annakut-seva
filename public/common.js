@@ -107,7 +107,75 @@ const EN = {
   'સમય': 'Time',
   'કુલ': 'Total',
   'સંખ્યા': 'Count',
-  'કાર્યકરોને અહીં ઉમેરો. તેઓ મોબાઇલ નંબર + પાસવર્ડથી લૉગિન કરશે.': 'Add karyakars here. They will log in with mobile number + password.',
+  'કાર્યકરોને અહીં ઉમેરો. તેઓ મોબાઇલ નંબર + પાસવર્ડથી લૉગિન કરશે. અન્નકૂટ સેવક પોતે નોંધણી કરે, કાર્યકર કે એડમિન મંજૂરી આપે.':
+    'Add karyakars here. They log in with mobile number + password. Annakut sevaks register themselves and a karyakar or admin approves them.',
+  // hierarchy: karyakar > annakut sevak, sign-up, approvals
+  'નવા અન્નકૂટ સેવક છો?': 'New Annakut Sevak?',
+  'નોંધણી કરો': 'Register',
+  'અન્નકૂટ સેવક નોંધણી': 'Annakut Sevak Registration',
+  'નોંધણી પછી તમારા કાર્યકર મંજૂરી આપશે, પછી તમે લૉગિન કરી શકશો.': 'After you register, your karyakar will approve you. Then you can log in.',
+  'તમારું નામ *': 'Your Name *',
+  'મોબાઇલ નંબર *': 'Mobile Number *',
+  'પાસવર્ડ * (ઓછામાં ઓછા 6 અક્ષર)': 'Password * (at least 6 characters)',
+  'મંડળ / વિસ્તાર *': 'Mandal / Area *',
+  'તમારા કાર્યકર *': 'Your Karyakar *',
+  'નોંધણી કરો ✔': 'Register ✔',
+  '← લૉગિન પર પાછા': '← Back to login',
+  'જય સ્વામિનારાયણ! નોંધણી થઈ ગઈ': 'Jai Swaminarayan! You are registered',
+  'તમારા કાર્યકર મંજૂરી આપે પછી આ જ મોબાઇલ નંબર અને પાસવર્ડથી લૉગિન કરો.': 'Once your karyakar approves you, log in with this mobile number and password.',
+  'લૉગિન પર જાઓ': 'Go to login',
+  '-- કાર્યકર પસંદ કરો --': '-- Select Karyakar --',
+  '👥 મારી ટીમ': '👥 My Team',
+  '📋 ટીમ એન્ટ્રી': '📋 Team Entries',
+  '🔔 મંજૂરી બાકી': '🔔 Waiting for approval',
+  'મંજૂરી બાકી': 'Waiting for approval',
+  'મારા અન્નકૂટ સેવક': 'My Annakut Sevaks',
+  '➕ નવો સેવક': '➕ New Sevak',
+  'અન્નકૂટ સેવક લૉગિન પેજ પર "નોંધણી કરો" થી પોતે પણ નોંધણી કરી શકે, પછી તમે મંજૂરી આપો.':
+    'Annakut sevaks can also register themselves with "Register" on the login page; then you approve them.',
+  '📊 ટીમ સારાંશ': '📊 Team Summary',
+  '📊 ટીમ સારાંશ (કાર્યકર → અન્નકૂટ સેવક)': '📊 Team Summary (Karyakar → Annakut Sevak)',
+  'મંજૂર કરો': 'Approve',
+  'નામંજૂર': 'Reject',
+  'મંજૂર': 'Approved',
+  'મંજૂર થયું ✔': 'Approved ✔',
+  '{0} ની નોંધણી નામંજૂર કરવી છે?': 'Reject the registration of {0}?',
+  'હજુ કોઈ અન્નકૂટ સેવક નથી': 'No annakut sevaks yet',
+  'આખી ટીમ': 'Whole team',
+  'હું': 'me',
+  'અન્નકૂટ સેવક સુધારો': 'Edit Annakut Sevak',
+  'નવો અન્નકૂટ સેવક': 'New Annakut Sevak',
+  '👥 કાર્યકર / સેવક': '👥 Karyakars / Sevaks',
+  'કાર્યકર ટીમ પ્રમાણે': 'By Karyakar Team',
+  '{0} ટીમ': '{0} team',
+  'કુલ - {0} ટીમ': 'Total - {0} team',
+  '{0} વ્યક્તિ': '{0} people',
+  'કાર્યકર (ફક્ત અન્નકૂટ સેવક માટે)': 'Karyakar (only for annakut sevaks)',
+  // google sheets
+  'સારાંશ': 'Summary',
+  'બધી એન્ટ્રી': 'All entries',
+  'Google Drive ખોલો': 'Open Google Drive',
+  'ફાઈલ ડાઉનલોડ કરીને Google Drive માં અપલોડ કરો → ફાઈલ પર ક્લિક → "Google Sheets સાથે ખોલો". ઉપરનું ફિલ્ટર (સેવા) પણ લાગુ થશે.':
+    'Download the file, upload it to Google Drive → click the file → "Open with Google Sheets". The seva filter above is applied too.',
+  'લાઈવ Google Sheet (આપમેળે અપડેટ)': 'Live Google Sheet (updates automatically)',
+  'નવી Google Sheet બનાવો, A1 ખાનામાં આ લખો. દર કલાકે આપમેળે અપડેટ થશે:': 'Create a new Google Sheet and paste this into cell A1. It updates automatically about every hour:',
+  'સારાંશ ફોર્મ્યુલા કૉપી': 'Copy summary formula',
+  'એન્ટ્રી ફોર્મ્યુલા કૉપી': 'Copy entries formula',
+  'નવી લિંક (જૂની બંધ થશે)': 'New link (old one stops)',
+  'લાઈવ લિંક બનાવો': 'Create live link',
+  '⚠ લાઈવ લિંક ત્યારે જ ચાલશે જ્યારે એપ ઇન્ટરનેટ પર ઓનલાઇન હશે (localhost / Wi-Fi પર નહીં).':
+    '⚠ The live link only works once the app is online on the internet (not on localhost / Wi-Fi).',
+  'આ લિંક ગુપ્ત રાખો - લિંક ધરાવનાર કોઈપણ તમારી ટીમનો ડેટા જોઈ શકે.': 'Keep this link secret - anyone with it can see your team\'s data.',
+  'કૉપી થયું ✔': 'Copied ✔',
+  'જૂની લિંક વાળી Google Sheet બંધ થઈ જશે. નવી લિંક બનાવવી છે?': 'Google Sheets using the old link will stop updating. Create a new link?',
+  'ફક્ત કાર્યકર / એડમિન માટે': 'Karyakars / admins only',
+  'તમારી નોંધણી હજુ મંજૂર થઈ નથી. તમારા કાર્યકરને જણાવો.': 'Your registration is not approved yet. Please tell your karyakar.',
+  'ઘણી નોંધણી થઈ. થોડી વાર પછી પ્રયત્ન કરો.': 'Too many registrations. Please try again later.',
+  'તમારા કાર્યકર પસંદ કરો': 'Select your karyakar',
+  'આ મોબાઇલ નંબરથી પહેલેથી નોંધણી થયેલી છે': 'This mobile number is already registered',
+  'મળ્યું નથી': 'Not found',
+  'આ કાર્યકર નીચે અન્નકૂટ સેવક છે. પહેલા તેમને બીજા કાર્યકર નીચે મૂકો.': 'This karyakar has annakut sevaks. Move them to another karyakar first.',
+  'ફક્ત બાકી નોંધણી જ કાઢી શકાય. બીજાને "બંધ" કરો.': 'Only pending registrations can be removed. Mark others as inactive instead.',
   '➕ નવો કાર્યકર': '➕ New Karyakar',
   'પોરબંદરના વિસ્તાર / મંડળ': 'Porbandar areas / mandals',
   '➕ નવું મંડળ': '➕ New Mandal',
@@ -275,6 +343,63 @@ function whatsappLink(e) {
     t('- બી.એ.પી.એસ. શ્રી સ્વામિનારાયણ મંદિર, પોરબંદર'),
   ].join('\n');
   return `https://wa.me/91${number}?text=${encodeURIComponent(text)}`;
+}
+
+const ROLE = { admin: 'એડમિન', karyakar: 'કાર્યકર', sevak: 'અન્નકૂટ સેવક' };
+const roleBadge = (r) => `<span class="badge role-${r}">${t(ROLE[r] || r)}</span>`;
+
+// Team summary table: karyakar + their annakut sevaks, then a team total row; one column per seva type
+function summaryTable(data) {
+  if (!data.rows.length) return '<p style="color:var(--muted)">' + t('હજુ ડેટા નથી') + '</p>';
+  const head = `<tr><th>${t('નામ')}</th><th>${t('ભૂમિકા')}</th><th class="num">${t('એન્ટ્રી')}</th><th class="num">${t('રકમ')}</th>
+    <th class="num">${t('બાકી')}</th>${data.sevaTypes.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}</tr>`;
+  const body = data.rows.map((r) => r.type === 'team'
+    ? `<tr class="team-row"><td>${t('કુલ - {0} ટીમ', esc(r.team_name))}</td><td>${t('{0} વ્યક્તિ', r.members)}</td>
+        <td class="num">${r.count}</td><td class="num">${rupees(r.total)}</td><td class="num">${rupees(r.pending)}</td>
+        ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id]}</td>`).join('')}</tr>`
+    : `<tr><td>${esc(r.name)}<br><small style="color:var(--muted)">${r.mobile}</small></td><td>${roleBadge(r.role)}</td>
+        <td class="num">${r.count}</td><td class="num">${rupees(r.total)}</td><td class="num">${rupees(r.pending)}</td>
+        ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id] || ''}</td>`).join('')}</tr>`).join('');
+  return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+// Google Sheets box: download CSVs (open with Google Sheets) + a live IMPORTDATA link once the app is online
+async function sheetsBox(el, getQuery) {
+  const { token } = await api('/api/me/sheet-link');
+  const online = !/^(localhost|127\.|192\.168\.|10\.)/.test(location.hostname);
+  const formula = (file) => `=IMPORTDATA("${location.origin}/sheets/${token}/${file}")`;
+  el.innerHTML = `
+    <h3>📗 Google Sheets</h3>
+    <div class="toolbar">
+      <button class="green small" data-dl="summary">⬇ ${t('સારાંશ')}</button>
+      <button class="green small" data-dl="export">⬇ ${t('બધી એન્ટ્રી')}</button>
+      <a class="btn small secondary" href="https://drive.google.com/drive/my-drive" target="_blank">${t('Google Drive ખોલો')}</a>
+    </div>
+    <p class="hint">${t('ફાઈલ ડાઉનલોડ કરીને Google Drive માં અપલોડ કરો → ફાઈલ પર ક્લિક → "Google Sheets સાથે ખોલો". ઉપરનું ફિલ્ટર (સેવા) પણ લાગુ થશે.')}</p>
+    <h3>🔗 ${t('લાઈવ Google Sheet (આપમેળે અપડેટ)')}</h3>
+    ${token ? `
+      <p class="hint">${t('નવી Google Sheet બનાવો, A1 ખાનામાં આ લખો. દર કલાકે આપમેળે અપડેટ થશે:')}</p>
+      <div class="formula">${esc(formula('summary.csv'))}</div>
+      <div class="toolbar" style="margin-top:6px">
+        <button class="small secondary" data-copy="summary.csv">📋 ${t('સારાંશ ફોર્મ્યુલા કૉપી')}</button>
+        <button class="small secondary" data-copy="entries.csv">📋 ${t('એન્ટ્રી ફોર્મ્યુલા કૉપી')}</button>
+        <button class="small secondary" data-new>${t('નવી લિંક (જૂની બંધ થશે)')}</button>
+      </div>` : `<button class="small" data-new>${t('લાઈવ લિંક બનાવો')}</button>`}
+    ${online ? '' : `<p class="warn">${t('⚠ લાઈવ લિંક ત્યારે જ ચાલશે જ્યારે એપ ઇન્ટરનેટ પર ઓનલાઇન હશે (localhost / Wi-Fi પર નહીં).')}</p>`}
+    <p class="hint">${t('આ લિંક ગુપ્ત રાખો - લિંક ધરાવનાર કોઈપણ તમારી ટીમનો ડેટા જોઈ શકે.')}</p>`;
+  el.querySelectorAll('[data-dl]').forEach((b) => (b.onclick = () => {
+    location.href = `/api/${b.dataset.dl}.csv?${getQuery()}`;
+  }));
+  el.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = async () => {
+    try { await navigator.clipboard.writeText(formula(b.dataset.copy)); toast(t('કૉપી થયું ✔')); }
+    catch { prompt('Copy:', formula(b.dataset.copy)); }
+  }));
+  const nb = el.querySelector('[data-new]');
+  if (nb) nb.onclick = async () => {
+    if (token && !confirm(t('જૂની લિંક વાળી Google Sheet બંધ થઈ જશે. નવી લિંક બનાવવી છે?'))) return;
+    await api('/api/me/sheet-link', { method: 'POST' });
+    sheetsBox(el, getQuery);
+  };
 }
 
 async function changePassword() {
