@@ -4,7 +4,7 @@
   "description": "Jamo Ne Jamadu - Annakut seva collection app for BAPS Shri Swaminarayan Mandir, Porbandar",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node --disable-warning=ExperimentalWarning server.js"
   },
   "engines": {
     "node": ">=22.13"

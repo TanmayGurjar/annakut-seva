@@ -15,6 +15,14 @@ const EN = {
   'મોબાઇલ નંબર': 'Mobile Number',
   'પાસવર્ડ': 'Password',
   'લૉગિન કરો': 'Log in',
+  'મને યાદ રાખો (આ ફોનમાં લૉગિન રહેવા દો)': 'Remember me (stay logged in on this phone)',
+  'નવો પાસવર્ડ સેટ કરો': 'Set a new password',
+  'સુરક્ષા માટે, આગળ વધતા પહેલા તમારો પોતાનો પાસવર્ડ રાખો.': 'For safety, set your own password before continuing.',
+  'નવો પાસવર્ડ (ઓછામાં ઓછા 6 અક્ષર)': 'New password (at least 6 characters)',
+  'નવો પાસવર્ડ ફરી લખો': 'Type the new password again',
+  'બંને પાસવર્ડ સરખા નથી': 'The two passwords do not match',
+  'પાસવર્ડ સેટ કરો ✔': 'Set password ✔',
+  '⬇ બેકઅપ': '⬇ Backup',
   // top bar / common
   'એડમિન': 'Admin',
   'કાર્યકર': 'Karyakar',
@@ -174,6 +182,9 @@ const EN = {
   'મંડળનું નામ લખો': 'Enter mandal name',
   'સેવાનું નામ અને રકમ લખો': 'Enter seva name and amount',
   'ઉત્સવનું નામ લખો': 'Enter festival name',
+  'ઘણા ખોટા પ્રયત્નો થયા. 15 મિનિટ પછી ફરી પ્રયત્ન કરો.': 'Too many wrong attempts. Please try again after 15 minutes.',
+  'પહેલા નવો પાસવર્ડ સેટ કરો': 'Please set a new password first',
+  'બીજો નવો પાસવર્ડ રાખો': 'Please choose a different new password',
 };
 
 // t('રસીદ {0}', no) -> text in the current language, with {0}, {1}... filled in
@@ -227,6 +238,7 @@ async function api(url, options = {}) {
   });
   if (res.status === 401 && !location.pathname.endsWith('login.html')) { location.href = '/login.html'; throw new Error('login'); }
   const data = await res.json().catch(() => ({}));
+  if (data.mustChange && !location.pathname.endsWith('login.html')) { location.href = '/login.html'; throw new Error('login'); }
   if (!res.ok) throw new Error(t(data.error || 'કંઈક ભૂલ થઈ'));
   return data;
 }

@@ -1,12 +1,28 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
-const { db, hashPassword, verifyPassword } = require('./db');
+const os = require('os');
+const fs = require('fs');
+const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DEFAULT_PASSWORD } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SESSION_DAYS = 30;
+const SESSION_DAYS = 90; // "remember me": stays logged in, renewed while the app is being used
+const SHORT_SESSION_HOURS = 12; // not remembered: ends when the browser closes (or after 12h)
 
+// Older databases: remember which sessions are "remember me" ones
+if (!db.prepare('PRAGMA table_info(sessions)').all().some((c) => c.name === 'remember')) {
+  db.exec('ALTER TABLE sessions ADD COLUMN remember INTEGER NOT NULL DEFAULT 1');
+}
+
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  if (isHttps(req)) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -41,29 +57,81 @@ const h = (fn) => (req, res) => {
 const fail = (status, message) => { const e = new Error(message); e.status = status; throw e; };
 
 // ---------- auth ----------
+// Behind Cloudflare Tunnel / a proxy the original scheme and visitor IP come in headers
+function isHttps(req) {
+  return req.secure || req.headers['x-forwarded-proto'] === 'https';
+}
+const clientIp = (req) => String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '');
+
+function setSessionCookie(req, res, token, remember) {
+  const age = remember ? `; Max-Age=${SESSION_DAYS * 86400}` : '';
+  res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; Path=/; SameSite=Lax${isHttps(req) ? '; Secure' : ''}${age}`);
+}
+
+// Slow down password guessing: too many wrong tries locks that mobile / that device for a while
+const LOCK_MINUTES = 15;
+const MAX_FAILS_PER_MOBILE = 5;
+const MAX_FAILS_PER_IP = 20;
+const failedLogins = new Map(); // key -> { count, first }
+function failCount(key) {
+  const f = failedLogins.get(key);
+  if (f && Date.now() - f.first > LOCK_MINUTES * 60000) { failedLogins.delete(key); return 0; }
+  return f ? f.count : 0;
+}
+function addFail(key) {
+  const f = failedLogins.get(key);
+  if (f && failCount(key)) f.count++; else failedLogins.set(key, { count: 1, first: Date.now() });
+}
+
 function auth(req, res, next) {
   const token = getCookie(req, 'sid');
   const user = token && db.prepare(`
-    SELECT u.id, u.name, u.mobile, u.role, u.mandal_id FROM sessions s
+    SELECT u.id, u.name, u.mobile, u.role, u.mandal_id, u.must_change, s.expires_at, s.remember FROM sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token = ? AND s.expires_at > ? AND u.active = 1`).get(token, Date.now());
   if (!user) return res.status(401).json({ error: 'કૃપા કરી લૉગિન કરો' });
-  req.user = user;
+  // Keep remembered logins alive while the app is used (renewed at most once a day)
+  if (user.remember && user.expires_at - Date.now() < (SESSION_DAYS - 1) * 86400000) {
+    db.prepare('UPDATE sessions SET expires_at = ? WHERE token = ?').run(Date.now() + SESSION_DAYS * 86400000, token);
+    setSessionCookie(req, res, token, true);
+  }
+  const { expires_at, remember, ...rest } = user;
+  req.user = { ...rest, must_change: !!user.must_change };
+  // Still on the default password: only allowed to change it
+  if (req.user.must_change && !['/me', '/me/password', '/logout'].includes(req.path)) {
+    return res.status(403).json({ error: 'પહેલા નવો પાસવર્ડ સેટ કરો', mustChange: true });
+  }
   next();
 }
 const adminOnly = (req, res, next) => (req.user.role === 'admin' ? next() : res.status(403).json({ error: 'ફક્ત એડમિન માટે' }));
 
 app.post('/api/login', h((req, res) => {
   const mobile = cleanMobile(req.body.mobile);
+  const keys = [`m:${mobile}`, `ip:${clientIp(req)}`];
+  if (failCount(keys[0]) >= MAX_FAILS_PER_MOBILE || failCount(keys[1]) >= MAX_FAILS_PER_IP) {
+    fail(429, 'ઘણા ખોટા પ્રયત્નો થયા. 15 મિનિટ પછી ફરી પ્રયત્ન કરો.');
+  }
   const user = db.prepare('SELECT * FROM users WHERE mobile = ? AND active = 1').get(mobile);
-  if (!user || !verifyPassword(String(req.body.password || ''), user.password_hash)) fail(401, 'મોબાઇલ નંબર અથવા પાસવર્ડ ખોટો છે');
+  if (!user || !verifyPassword(String(req.body.password || ''), user.password_hash)) {
+    keys.forEach(addFail);
+    fail(401, 'મોબાઇલ નંબર અથવા પાસવર્ડ ખોટો છે');
+  }
+  failedLogins.delete(keys[0]);
+  const remember = req.body.remember !== false;
   const token = crypto.randomBytes(32).toString('hex');
+  const life = remember ? SESSION_DAYS * 86400000 : SHORT_SESSION_HOURS * 3600000;
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
-  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(token, user.id, Date.now() + SESSION_DAYS * 86400000);
-  res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}`);
-  res.json({ role: user.role, name: user.name });
+  db.prepare('INSERT INTO sessions (token, user_id, expires_at, remember) VALUES (?, ?, ?, ?)')
+    .run(token, user.id, Date.now() + life, remember ? 1 : 0);
+  setSessionCookie(req, res, token, remember);
+  res.json({ role: user.role, name: user.name, mustChange: !!user.must_change });
 }));
+
+// For uptime monitors / the host: is the app and database alive?
+app.get('/healthz', (req, res) => {
+  db.prepare('SELECT 1').get();
+  res.json({ ok: true });
+});
 
 app.post('/api/logout', (req, res) => {
   const token = getCookie(req, 'sid');
@@ -81,7 +149,10 @@ app.post('/api/me/password', h((req, res) => {
   const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
   if (!verifyPassword(String(current || ''), row.password_hash)) fail(400, 'જૂનો પાસવર્ડ ખોટો છે');
   if (!next || String(next).length < 6) fail(400, 'નવો પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(String(next)), req.user.id);
+  if (String(next) === DEFAULT_PASSWORD || String(next) === String(current)) fail(400, 'બીજો નવો પાસવર્ડ રાખો');
+  db.prepare('UPDATE users SET password_hash = ?, must_change = 0 WHERE id = ?').run(hashPassword(String(next)), req.user.id);
+  // Log out every other device that was using the old password
+  db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(req.user.id, getCookie(req, 'sid'));
   res.json({ ok: true });
 }));
 
@@ -289,7 +360,7 @@ app.put('/api/users/:id', adminOnly, h((req, res) => {
     if (String(req.body.password).length < 6) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
     db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(String(req.body.password)), id);
   }
-  if (!d.active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+  if (!d.active || (req.body.password && id !== req.user.id)) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
   res.json({ ok: true });
 }));
 
@@ -349,6 +420,37 @@ app.put('/api/events/:id', adminOnly, h((req, res) => {
   res.json({ ok: true });
 }));
 
+// ---------- admin: backup download (keep a copy off this computer) ----------
+app.get('/api/backup.db', adminOnly, h((req, res) => {
+  const file = path.join(os.tmpdir(), `annakut-backup-${crypto.randomBytes(6).toString('hex')}.db`);
+  backupTo(file);
+  const day = new Date().toISOString().slice(0, 10);
+  res.download(file, `annakut-backup-${day}.db`, () => fs.rmSync(file, { force: true }));
+}));
+
 app.get('/', (req, res) => res.redirect('/login.html'));
 
-app.listen(PORT, () => console.log(`Annakut Seva app running -> http://localhost:${PORT}`));
+// Bad requests (e.g. broken JSON) get a short message, never internal details
+app.use((err, req, res, next) => {
+  if (err.status && err.status < 500) return res.status(err.status).json({ error: 'Bad request' });
+  console.error(err);
+  res.status(500).json({ error: 'Server error' });
+});
+
+// Backup on start and every 6 hours; also forget old failed-login records
+dailyBackup();
+const timer = setInterval(() => {
+  dailyBackup();
+  for (const key of failedLogins.keys()) failCount(key);
+}, 6 * 3600000);
+
+const server = app.listen(PORT, () => console.log(`Annakut Seva app running -> http://localhost:${PORT}`));
+
+// Close the database cleanly when stopped (Ctrl+C, service stop, host restart)
+function shutdown() {
+  clearInterval(timer);
+  server.close(() => { db.close(); process.exit(0); });
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

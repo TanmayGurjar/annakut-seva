@@ -95,15 +95,26 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(test, Buffer.from(hash, 'hex'));
 }
 
+const DEFAULT_PASSWORD = 'admin123';
+
+// Upgrade older databases: users still on the default password must change it before using the app
+const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userCols.includes('must_change')) {
+  db.exec('ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0');
+  const setFlag = db.prepare('UPDATE users SET must_change = 1 WHERE id = ?');
+  db.prepare('SELECT id, password_hash FROM users').all()
+    .forEach((u) => { if (verifyPassword(DEFAULT_PASSWORD, u.password_hash)) setFlag.run(u.id); });
+}
+
 // First run: create main admin, the seva list from the card, and this year's event
 function seed() {
   const hasUsers = db.prepare('SELECT COUNT(*) AS c FROM users').get().c > 0;
   if (hasUsers) return;
 
   const adminMobile = process.env.ADMIN_MOBILE || '9999999999';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  db.prepare('INSERT INTO users (name, mobile, password_hash, role) VALUES (?, ?, ?, ?)')
-    .run('Main Admin', adminMobile, hashPassword(adminPassword), 'admin');
+  const adminPassword = process.env.ADMIN_PASSWORD || DEFAULT_PASSWORD;
+  db.prepare('INSERT INTO users (name, mobile, password_hash, role, must_change) VALUES (?, ?, ?, ?, ?)')
+    .run('Main Admin', adminMobile, hashPassword(adminPassword), 'admin', adminPassword === DEFAULT_PASSWORD ? 1 : 0);
 
   const sevas = [
     ['બેકરી થાળ', 201], ['ફરસાણ થાળ', 501], ['મિષ્ટાન થાળ', 1001],
@@ -123,4 +134,27 @@ function seed() {
 }
 seed();
 
-module.exports = { db, hashPassword, verifyPassword };
+// Safe copy of the whole database (works while the app is running)
+function backupTo(file) {
+  db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+}
+
+// One backup file per day in data/backups, keeping the last 30 days
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const KEEP_BACKUPS = 30;
+function dailyBackup() {
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const d = new Date();
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const file = path.join(BACKUP_DIR, `annakut-${day}.db`);
+    fs.rmSync(file, { force: true }); // VACUUM INTO needs a fresh file; refreshed through the day
+    backupTo(file);
+    fs.readdirSync(BACKUP_DIR).filter((f) => /^annakut-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort().reverse()
+      .slice(KEEP_BACKUPS).forEach((f) => fs.rmSync(path.join(BACKUP_DIR, f), { force: true }));
+  } catch (e) {
+    console.error('Backup failed:', e.message);
+  }
+}
+
+module.exports = { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD };

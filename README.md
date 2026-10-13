@@ -11,7 +11,7 @@ npm start
 ```
 Open http://localhost:3000
 
-First login: **mobile `9999999999` / password `admin123`**. Change it right away with the 🔑 button.
+First login: **mobile `9999999999` / password `admin123`**. The app makes you set a new password before you can do anything else.
 To use your own number from the start, delete the `data` folder and run:
 `$env:ADMIN_MOBILE="98xxxxxxxx"; $env:ADMIN_PASSWORD="yourpass"; npm start`
 
@@ -44,7 +44,16 @@ server.js      API + login/roles
 db.js          database tables + first-run setup
 public/        screens (HTML/CSS/JS, no build step)
 data/          annakut.db  ← ALL YOUR DATA. Back this folder up.
+data/backups/  automatic daily copies (last 30 days)
 ```
+
+## Safety built in
+
+- **Backups:** a copy of the database is saved to `data/backups/` when the app starts and every 6 hours (one file per day, last 30 kept).
+  These copies are on the same computer, so also use **Admin → બધી એન્ટ્રી → ⬇ બેકઅપ** now and then and keep the file on Google Drive or a pen drive.
+  To restore: stop the app, copy a backup file to `data/annakut.db` (delete `annakut.db-wal` / `-shm`), start again.
+- **Login:** "Remember me" keeps a phone logged in for 90 days (renewed while used). After 5 wrong passwords for a mobile number, that number is locked for 15 minutes.
+- When an admin resets a karyakar's password, or a user changes their own, their other devices are logged out.
 
 ## Put it online (so karyakars can use it from their phones)
 
