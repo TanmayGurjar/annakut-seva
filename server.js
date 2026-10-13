@@ -607,6 +607,14 @@ app.put('/api/events/:id', adminOnly, h((req, res) => {
   res.json({ ok: true });
 }));
 
+// Current internet link of the free Cloudflare tunnel (changes on every laptop restart), read from its log
+app.get('/api/public-url', leadOnly, (req, res) => {
+  let log = '';
+  try { log = fs.readFileSync(path.join(DATA_DIR, 'logs', 'tunnel.log'), 'utf8'); } catch {}
+  const urls = log.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/g);
+  res.json({ url: urls ? urls[urls.length - 1] : null });
+});
+
 // ---------- admin: backup download (keep a copy off this computer) ----------
 app.get('/api/backup.db', adminOnly, h((req, res) => {
   const file = path.join(os.tmpdir(), `annakut-backup-${crypto.randomBytes(6).toString('hex')}.db`);

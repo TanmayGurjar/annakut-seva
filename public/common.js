@@ -91,6 +91,12 @@ const EN = {
   'ફક્ત કાર્યકર': 'Only karyakars',
   'ફક્ત અન્નકૂટ સેવક': 'Only annakut sevaks',
   'કોઈ મળ્યું નથી': 'Nobody found',
+  'ઇન્ટરનેટ લિંક હજુ ચાલુ નથી (લેપટોપ ઇન્ટરનેટ સાથે જોડાયેલું છે? થોડી વાર પછી ફરી ખોલો).': 'Internet link is not running yet (is the laptop online? Open this again in a minute).',
+  'અન્નકૂટ સેવા એપની લિંક:': 'Annakut Seva app link:',
+  'ઓનલાઇન લિંક': 'Online link',
+  'કૉપી': 'Copy',
+  'પર મોકલો': 'share',
+  'લેપટોપ ફરી ચાલુ થાય ત્યારે આ લિંક બદલાઈ જાય છે - ત્યારે નવી લિંક ફરી મોકલો.': 'This link changes when the laptop restarts - then send the new link again.',
   'કોડ (રસીદ માટે, દા.ત. TG → TG-1, TG-2) - ખાલી રાખો તો નામ પરથી બનશે': 'Code (for receipts, e.g. TG → TG-1, TG-2) - leave blank to make it from the name',
   '(રસીદ માટે, દા.ત. TG → TG-1. ખાલી રાખો તો નામ પરથી બનશે)': '(for receipts, e.g. TG → TG-1. Leave blank to make it from the name)',
   'કોડ 2 થી 4 અંગ્રેજી અક્ષરનો રાખો (દા.ત. TG)': 'Code must be 2 to 4 English letters (e.g. TG)',
@@ -409,6 +415,26 @@ async function sheetsBox(el, getQuery) {
     if (token && !confirm(t('જૂની લિંક વાળી Google Sheet બંધ થઈ જશે. નવી લિંક બનાવવી છે?'))) return;
     await api('/api/me/sheet-link', { method: 'POST' });
     sheetsBox(el, getQuery);
+  };
+}
+
+// Current internet link (free tunnel; it changes when the laptop restarts) with copy + WhatsApp share
+async function publicLinkBox(el) {
+  const { url } = await api('/api/public-url');
+  if (!url) {
+    el.innerHTML = `<div class="warn">🌐 ${t('ઇન્ટરનેટ લિંક હજુ ચાલુ નથી (લેપટોપ ઇન્ટરનેટ સાથે જોડાયેલું છે? થોડી વાર પછી ફરી ખોલો).')}</div>`;
+    return;
+  }
+  const msg = `${t('જય સ્વામિનારાયણ 🙏')}\n${t('અન્નકૂટ સેવા એપની લિંક:')}\n${url}`;
+  el.innerHTML = `<div class="card soft" style="margin-bottom:12px">
+    <b>🌐 ${t('ઓનલાઇન લિંક')}:</b> <a href="${esc(url)}" target="_blank">${esc(url)}</a>
+    <div class="toolbar" style="margin:8px 0 0">
+      <button class="small secondary" data-copy>📋 ${t('કૉપી')}</button>
+      <a class="btn small green" target="_blank" href="https://wa.me/?text=${encodeURIComponent(msg)}">WhatsApp ${t('પર મોકલો')}</a>
+    </div>
+    <p class="hint">${t('લેપટોપ ફરી ચાલુ થાય ત્યારે આ લિંક બદલાઈ જાય છે - ત્યારે નવી લિંક ફરી મોકલો.')}</p></div>`;
+  el.querySelector('[data-copy]').onclick = async () => {
+    try { await navigator.clipboard.writeText(url); toast(t('કૉપી થયું ✔')); } catch { prompt('Copy:', url); }
   };
 }
 

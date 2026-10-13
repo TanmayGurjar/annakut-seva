@@ -27,6 +27,7 @@
 
     <!-- DASHBOARD -->
     <section id="tab-dash">
+      <div id="publicLink"></div>
       <div class="stats">
         <div class="stat"><div class="v" id="sTotal">-</div><div class="l">કુલ સેવા રકમ</div></div>
         <div class="stat"><div class="v" id="sCount">-</div><div class="l">કુલ એન્ટ્રી</div></div>
@@ -164,6 +165,7 @@
 
     // ----- dashboard -----
     async function loadDash() {
+      publicLinkBox($('#publicLink')).catch(() => {});
       const s = await api('/api/stats');
       $('#sTotal').textContent = rupees(s.summary.total);
       $('#sCount').textContent = s.summary.count;
