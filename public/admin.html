@@ -77,6 +77,17 @@
     <section id="tab-users" class="hidden">
       <div class="toolbar"><div class="grow">કાર્યકરોને અહીં ઉમેરો. તેઓ મોબાઇલ નંબર + પાસવર્ડથી લૉગિન કરશે. અન્નકૂટ સેવક પોતે નોંધણી કરે, કાર્યકર કે એડમિન મંજૂરી આપે.</div>
         <button onclick="editUser()">➕ નવો કાર્યકર</button></div>
+      <div class="filters">
+        <input id="uQ" placeholder="🔍 નામ / મોબાઇલ / કોડ">
+        <select id="uRole">
+          <option value="">બધા (કાર્યકર + સેવક)</option>
+          <option value="karyakar">ફક્ત કાર્યકર</option>
+          <option value="sevak">ફક્ત અન્નકૂટ સેવક</option>
+          <option value="pending">🔔 મંજૂરી બાકી</option>
+        </select>
+        <select id="uTeam"></select>
+      </div>
+      <p class="hint" id="uCount"></p>
       <div class="table-wrap"><table>
         <thead><tr><th>નામ</th><th>કોડ</th><th>મોબાઇલ</th><th>ભૂમિકા</th><th>કાર્યકર</th><th>મંડળ</th><th class="num">એન્ટ્રી</th><th>સ્થિતિ</th><th></th></tr></thead>
         <tbody id="uBody"></tbody></table></div>
@@ -200,14 +211,36 @@
     }
 
     // ----- users -----
+    // Grouped by karyakar: each karyakar followed by their annakut sevaks. Filters: search, role, one karyakar's team.
+    const teamOf = (u) => (u.role === 'sevak' ? u.parent_id : u.id);
     function renderUsers() {
-      $('#uBody').innerHTML = users.map((u) => `<tr class="${!u.approved ? 'pending-row' : u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td><b>${esc(u.code || '')}</b></td><td>${u.mobile}</td>
+      const leads = users.filter((u) => u.role === 'karyakar');
+      const keep = $('#uTeam').value;
+      $('#uTeam').innerHTML = `<option value="">${t('બધા કાર્યકર')}</option>` +
+        leads.map((u) => `<option value="${u.id}">👥 ${esc(t('{0} ટીમ', u.name))} (${users.filter((x) => x.parent_id === u.id).length})</option>`).join('');
+      $('#uTeam').value = keep;
+      const q = $('#uQ').value.trim().toLowerCase();
+      const role = $('#uRole').value;
+      const team = toInt($('#uTeam').value);
+      const lead = (u) => users.find((x) => x.id === teamOf(u));
+      const list = users
+        .filter((u) => !q || [u.name, u.mobile, u.code].some((v) => String(v || '').toLowerCase().includes(q)))
+        .filter((u) => !role || (role === 'pending' ? !u.approved : u.role === role))
+        .filter((u) => !team || teamOf(u) === team)
+        .sort((a, b) => (b.role === 'admin') - (a.role === 'admin') // admins on top
+          || String(lead(a)?.name).localeCompare(String(lead(b)?.name)) || teamOf(a) - teamOf(b) // then team by team
+          || (a.role === 'sevak') - (b.role === 'sevak') || a.name.localeCompare(b.name)); // karyakar, then their sevaks
+      $('#uCount').textContent = t('{0} વ્યક્તિ', list.length);
+      $('#uBody').innerHTML = list.map((u) => `<tr class="${!u.approved ? 'pending-row' : u.active ? '' : 'inactive'}"><td>${u.role === 'sevak' ? '<span style="color:var(--muted)">└ </span>' : ''}${esc(u.name)}</td><td><b>${esc(u.code || '')}</b></td><td>${u.mobile}</td>
         <td>${roleBadge(u.role)}</td><td>${esc(u.parent_name || '')}</td><td>${esc(u.mandal_name || '-')}</td><td class="num">${u.entry_count}</td>
         <td>${u.approved ? status(u.active) : '🔔 ' + t('મંજૂરી બાકી')}</td>
         <td style="white-space:nowrap">${u.approved ? '' : `<button class="small green" onclick="approveUser(${u.id})">✔</button>
           <button class="small danger" onclick="rejectUser(${u.id})">✖</button>`}
-          <button class="small secondary" onclick="editUser(${u.id})">✏</button></td></tr>`).join('');
+          <button class="small secondary" onclick="editUser(${u.id})">✏</button></td></tr>`).join('')
+        || `<tr><td colspan="9" style="color:var(--muted)">${t('કોઈ મળ્યું નથી')}</td></tr>`;
     }
+    const toInt = (v) => Number(v) || 0;
+    ['#uQ', '#uRole', '#uTeam'].forEach((id) => $(id).addEventListener('input', renderUsers));
     async function approveUser(id) {
       try { await api(`/api/users/${id}/approve`, { method: 'POST' }); toast(t('મંજૂર થયું ✔')); refresh(); } catch (e) { toast(e.message, true); }
     }
