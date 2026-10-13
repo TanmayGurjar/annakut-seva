@@ -78,7 +78,7 @@
       <div class="toolbar"><div class="grow">કાર્યકરોને અહીં ઉમેરો. તેઓ મોબાઇલ નંબર + પાસવર્ડથી લૉગિન કરશે. અન્નકૂટ સેવક પોતે નોંધણી કરે, કાર્યકર કે એડમિન મંજૂરી આપે.</div>
         <button onclick="editUser()">➕ નવો કાર્યકર</button></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>નામ</th><th>મોબાઇલ</th><th>ભૂમિકા</th><th>કાર્યકર</th><th>મંડળ</th><th class="num">એન્ટ્રી</th><th>સ્થિતિ</th><th></th></tr></thead>
+        <thead><tr><th>નામ</th><th>કોડ</th><th>મોબાઇલ</th><th>ભૂમિકા</th><th>કાર્યકર</th><th>મંડળ</th><th class="num">એન્ટ્રી</th><th>સ્થિતિ</th><th></th></tr></thead>
         <tbody id="uBody"></tbody></table></div>
     </section>
 
@@ -181,14 +181,14 @@
       const r = await api('/api/entries?' + filterQuery());
       $('#eCount').textContent = r.rows.length; $('#eTotal').textContent = rupees(r.total);
       $('#eBody').innerHTML = r.rows.map((e) => `<tr>
-        <td>${e.receipt_no}</td><td>${esc(e.devotee_name)}</td>
+        <td><b>${e.receipt}</b></td><td>${esc(e.devotee_name)}</td>
         <td>${e.mobile}${e.whatsapp && e.whatsapp !== e.mobile ? '<br><small>WA ' + e.whatsapp + '</small>' : ''}</td>
         <td>${esc(e.mandal_name)}</td><td>${esc(e.seva_names || '-')}</td><td class="num">${rupees(e.amount)}</td>
         <td><span class="badge ${e.paid ? '' : 'pending'}">${PAYMENT[e.payment_mode]}</span></td>
         <td>${esc(e.karyakar_name)}${e.team_name !== e.karyakar_name ? '<br><small>👥 ' + esc(e.team_name) + '</small>' : ''}</td><td><small>${esc(e.created_at)}</small></td>
         <td style="white-space:nowrap"><a class="btn small secondary" href="/app.html?edit=${e.id}">✏</a>
           <a class="btn small secondary" target="_blank" href="/receipt.html?id=${e.id}">🖨</a>
-          <button class="small danger" onclick="delEntry(${e.id}, ${e.receipt_no})">🗑</button></td></tr>`).join('')
+          <button class="small danger" onclick="delEntry(${e.id}, '${e.receipt}')">🗑</button></td></tr>`).join('')
         || '<tr><td colspan="10" style="text-align:center;color:var(--muted)">' + t('કોઈ એન્ટ્રી નથી') + '</td></tr>';
     }
     let ft; ['#fQ', '#fMandal', '#fKaryakar', '#fSeva', '#fPay'].forEach((id) =>
@@ -201,7 +201,7 @@
 
     // ----- users -----
     function renderUsers() {
-      $('#uBody').innerHTML = users.map((u) => `<tr class="${!u.approved ? 'pending-row' : u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td>${u.mobile}</td>
+      $('#uBody').innerHTML = users.map((u) => `<tr class="${!u.approved ? 'pending-row' : u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td><b>${esc(u.code || '')}</b></td><td>${u.mobile}</td>
         <td>${roleBadge(u.role)}</td><td>${esc(u.parent_name || '')}</td><td>${esc(u.mandal_name || '-')}</td><td class="num">${u.entry_count}</td>
         <td>${u.approved ? status(u.active) : '🔔 ' + t('મંજૂરી બાકી')}</td>
         <td style="white-space:nowrap">${u.approved ? '' : `<button class="small green" onclick="approveUser(${u.id})">✔</button>
@@ -220,6 +220,7 @@
       openDialog(id ? 'કાર્યકર સુધારો' : 'નવો કાર્યકર', [
         { name: 'name', label: 'નામ *', value: u.name },
         { name: 'mobile', label: 'મોબાઇલ નં. * (લૉગિન માટે)', type: 'tel', value: u.mobile },
+        { name: 'code', label: 'કોડ (રસીદ માટે, દા.ત. TG → TG-1, TG-2) - ખાલી રાખો તો નામ પરથી બનશે', value: u.code, placeholder: 'TG' },
         { name: 'password', label: id ? 'નવો પાસવર્ડ (ખાલી રાખો તો બદલાશે નહીં)' : 'પાસવર્ડ * (min 6)', type: 'text' },
         { name: 'mandal_id', label: 'મંડળ', type: 'select', value: u.mandal_id, options: [['', '-- કોઈ નહીં --'], ...mandals.map((m) => [m.id, m.name])] },
         { name: 'role', label: 'ભૂમિકા', type: 'select', value: u.role, options: [['karyakar', 'કાર્યકર'], ['sevak', 'અન્નકૂટ સેવક'], ['admin', 'એડમિન']] },

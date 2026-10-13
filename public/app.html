@@ -110,7 +110,7 @@
         <div class="toolbar"><h3 class="grow" style="margin:0">મારા અન્નકૂટ સેવક</h3>
           <button class="small" onclick="editSevak()">➕ નવો સેવક</button></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>નામ</th><th>મોબાઇલ</th><th class="num">એન્ટ્રી</th><th class="num">રકમ</th><th>સ્થિતિ</th><th></th></tr></thead>
+          <thead><tr><th>નામ</th><th>કોડ</th><th>મોબાઇલ</th><th class="num">એન્ટ્રી</th><th class="num">રકમ</th><th>સ્થિતિ</th><th></th></tr></thead>
           <tbody id="sevakBody"></tbody></table></div>
         <p class="hint">અન્નકૂટ સેવક લૉગિન પેજ પર "નોંધણી કરો" થી પોતે પણ નોંધણી કરી શકે, પછી તમે મંજૂરી આપો.</p>
       </div>
@@ -128,6 +128,7 @@
       <h2 id="sevakTitle"></h2>
       <label>નામ *</label><input name="name" required>
       <label>મોબાઇલ નં. * (લૉગિન માટે)</label><input name="mobile" type="tel" inputmode="numeric" maxlength="10" required>
+      <label>કોડ <span class="opt">(રસીદ માટે, દા.ત. TG → TG-1. ખાલી રાખો તો નામ પરથી બનશે)</span></label><input name="code" maxlength="4" placeholder="TG" style="text-transform:uppercase">
       <label id="pwLabel"></label><input name="password" type="text" autocomplete="off">
       <label class="check"><input type="checkbox" name="active"> ચાલુ (લૉગિન કરી શકે)</label>
       <div class="actions"><button value="save">સેવ કરો</button>
@@ -150,7 +151,7 @@
           meta.sevaTypes.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
         loadTeam().catch(() => {});
       }
-      $('#eventName').textContent = meta.event ? `${meta.event.name} · ${me.name}` : t('કોઈ ચાલુ ઉત્સવ નથી');
+      $('#eventName').textContent = meta.event ? `${meta.event.name} · ${me.name} (${me.code})` : t('કોઈ ચાલુ ઉત્સવ નથી');
       form.mandal_id.innerHTML = `<option value="">${t('-- મંડળ પસંદ કરો --')}</option>` +
         meta.mandals.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
       $('#sevas').innerHTML = meta.sevaTypes.map((s) => `
@@ -196,7 +197,7 @@
       const r = await api(`/api/entries/check-mobile?mobile=${m}&exclude=${editingId || 0}`);
       let html = '';
       if (r.existing.length) html += `<div class="warn">${t('⚠ આ નંબરથી આ વર્ષે પહેલેથી {0} એન્ટ્રી છે: ', r.existing.length)}` +
-        r.existing.map((x) => `${t('રસીદ {0}', x.receipt_no)} - ${esc(x.devotee_name)} ${rupees(x.amount)} (${esc(x.karyakar_name)})`).join('; ') + '</div>';
+        r.existing.map((x) => `${t('રસીદ {0}', x.receipt)} - ${esc(x.devotee_name)} ${rupees(x.amount)} (${esc(x.karyakar_name)})`).join('; ') + '</div>';
       if (r.previous && !editingId && !form.devotee_name.value) {
         html += `<div class="warn">${t('ગયા વખતની માહિતી મળી:')} <b>${esc(r.previous.devotee_name)}</b>
           <button type="button" class="small green" id="fillPrev">${t('ભરો')}</button></div>`;
@@ -234,7 +235,7 @@
 
     function showDone(e, wasEdit) {
       form.classList.add('hidden'); $('#doneBox').classList.remove('hidden');
-      $('#doneReceipt').textContent = e.receipt_no;
+      $('#doneReceipt').textContent = e.receipt;
       $('#doneDetails').innerHTML = `<b>${esc(e.devotee_name)}</b> · ${esc(e.mandal_name)}<br>${esc(e.sevas.map((s) => s.name).join(', '))}<br>
         <b style="font-size:20px;color:var(--green)">${rupees(e.amount)}</b>${wasEdit ? '<br>' + t('(સુધારો સેવ થયો)') : ''}`;
       $('#doneWa').href = whatsappLink(e);
@@ -247,7 +248,7 @@
         const e = await api(`/api/entries/${id}`);
         switchTab('form'); newEntry(); editingId = e.id; amountTouched = true;
         history.replaceState(null, '', `/app.html?edit=${e.id}`);
-        $('#formTitle').textContent = t('એન્ટ્રી સુધારો - રસીદ {0}', e.receipt_no);
+        $('#formTitle').textContent = t('એન્ટ્રી સુધારો - રસીદ {0}', e.receipt);
         $('#cancelEdit').classList.remove('hidden');
         form.mobile.value = e.mobile; form.devotee_name.value = e.devotee_name; form.mandal_id.value = e.mandal_id;
         form.address.value = e.address || ''; form.amount.value = e.amount; form.payment_mode.value = e.payment_mode;
@@ -277,7 +278,7 @@
       $('#myTotal').textContent = rupees(r.total);
       $('#list').innerHTML = r.rows.map((e) => `
         <div class="entry-item">
-          <div class="top"><span class="name">#${e.receipt_no} ${esc(e.devotee_name)}</span><span class="amt">${rupees(e.amount)}</span></div>
+          <div class="top"><span class="name">${e.receipt} · ${esc(e.devotee_name)}</span><span class="amt">${rupees(e.amount)}</span></div>
           <div class="meta">📱 ${e.mobile} · ${esc(e.mandal_name)} · ${esc(e.seva_names || '-')}
             · <span class="badge ${e.paid ? '' : 'pending'}">${PAYMENT[e.payment_mode]}</span>
             ${e.karyakar_id !== me.id ? ` · 👤 ${esc(e.karyakar_name)}` : ''}</div>
@@ -308,16 +309,16 @@
       $('#pendingBadge').classList.toggle('hidden', !pending.length);
       $('#pendingBox').classList.toggle('hidden', !pending.length);
       $('#pendingList').innerHTML = pending.map((u) => `
-        <div class="entry-item"><div class="top"><span class="name">${esc(u.name)}</span><span>📱 ${u.mobile}</span></div>
+        <div class="entry-item"><div class="top"><span class="name">${esc(u.name)} <small>(${esc(u.code || '')})</small></span><span>📱 ${u.mobile}</span></div>
           <div class="meta">${esc(u.created_at)}</div>
           <div class="actions" style="justify-content:flex-start">
             <button class="small green" onclick="approve(${u.id})">✔ ${t('મંજૂર કરો')}</button>
             <button class="small danger" onclick="reject(${u.id})">✖ ${t('નામંજૂર')}</button>
           </div></div>`).join('');
-      $('#sevakBody').innerHTML = team.map((u) => `<tr class="${u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td>${u.mobile}</td>
+      $('#sevakBody').innerHTML = team.map((u) => `<tr class="${u.active ? '' : 'inactive'}"><td>${esc(u.name)}</td><td><b>${esc(u.code || '')}</b></td><td>${u.mobile}</td>
         <td class="num">${u.event_count}</td><td class="num">${rupees(u.event_total)}</td><td>${t(u.active ? '✅ ચાલુ' : '⛔ બંધ')}</td>
         <td><button class="small secondary" onclick="editSevak(${u.id})">✏</button></td></tr>`).join('')
-        || `<tr><td colspan="6" style="color:var(--muted)">${t('હજુ કોઈ અન્નકૂટ સેવક નથી')}</td></tr>`;
+        || `<tr><td colspan="7" style="color:var(--muted)">${t('હજુ કોઈ અન્નકૂટ સેવક નથી')}</td></tr>`;
       // "whose entries" filter on the entries tab
       const keep = $('#who').value;
       $('#who').innerHTML = `<option value="">${t('આખી ટીમ')}</option><option value="${me.id}">${esc(me.name)} (${t('હું')})</option>` +
@@ -343,11 +344,11 @@
       const f = $('#sevakForm');
       $('#sevakTitle').textContent = t(id ? 'અન્નકૂટ સેવક સુધારો' : 'નવો અન્નકૂટ સેવક');
       $('#pwLabel').textContent = t(id ? 'નવો પાસવર્ડ (ખાલી રાખો તો બદલાશે નહીં)' : 'પાસવર્ડ * (min 6)');
-      f.name.value = u.name || ''; f.mobile.value = u.mobile || ''; f.password.value = ''; f.active.checked = !!u.active;
+      f.name.value = u.name || ''; f.mobile.value = u.mobile || ''; f.code.value = u.code || ''; f.password.value = ''; f.active.checked = !!u.active;
       f.password.required = !id;
       f.onsubmit = async (ev) => {
         ev.preventDefault();
-        const body = { name: f.name.value, mobile: f.mobile.value, password: f.password.value, active: f.active.checked };
+        const body = { name: f.name.value, mobile: f.mobile.value, code: f.code.value, password: f.password.value, active: f.active.checked };
         try {
           await api(id ? `/api/users/${id}` : '/api/users', { method: id ? 'PUT' : 'POST', body });
           $('#dlg').close(); toast(t('સેવ થયું ✔')); loadTeam();

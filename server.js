@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
-const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DEFAULT_PASSWORD } = require('./db');
+const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -86,7 +86,7 @@ function addFail(key) {
 function auth(req, res, next) {
   const token = getCookie(req, 'sid');
   const user = token && db.prepare(`
-    SELECT u.id, u.name, u.mobile, u.role, u.mandal_id, u.parent_id, u.must_change, s.expires_at, s.remember FROM sessions s
+    SELECT u.id, u.name, u.mobile, u.role, u.code, u.mandal_id, u.parent_id, u.must_change, s.expires_at, s.remember FROM sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token = ? AND s.expires_at > ? AND u.active = 1 AND u.approved = 1`).get(token, Date.now());
   if (!user) return res.status(401).json({ error: 'કૃપા કરી લૉગિન કરો' });
@@ -168,8 +168,8 @@ app.post('/api/signup', h((req, res) => {
     .get(toInt(req.body.parent_id));
   if (!lead) fail(400, 'તમારા કાર્યકર પસંદ કરો');
   if (db.prepare('SELECT 1 FROM users WHERE mobile = ?').get(mobile)) fail(400, 'આ મોબાઇલ નંબરથી પહેલેથી નોંધણી થયેલી છે');
-  db.prepare(`INSERT INTO users (name, mobile, password_hash, role, mandal_id, parent_id, approved)
-    VALUES (?, ?, ?, 'sevak', ?, ?, 0)`).run(name, mobile, hashPassword(password), lead.mandal_id, lead.id);
+  db.prepare(`INSERT INTO users (name, mobile, password_hash, role, mandal_id, parent_id, approved, code)
+    VALUES (?, ?, ?, 'sevak', ?, ?, 0, ?)`).run(name, mobile, hashPassword(password), lead.mandal_id, lead.id, makeCode(name));
   signups.set(ip, [...recent, Date.now()]);
   res.json({ ok: true });
 }));
@@ -202,7 +202,7 @@ app.get('/api/meta', (req, res) => {
 // ---------- entries ----------
 function loadEntry(id) {
   const e = db.prepare(`
-    SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile, u.parent_id AS entered_by_parent,
+    SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile, u.parent_id AS entered_by_parent, e.code || '-' || e.seq AS receipt,
       ev.name AS event_name, ev.event_date, ev.place AS event_place, ev.time_text AS event_time
     FROM entries e JOIN mandals m ON m.id = e.mandal_id JOIN users u ON u.id = e.karyakar_id
     JOIN events ev ON ev.id = e.event_id WHERE e.id = ?`).get(id);
@@ -270,14 +270,16 @@ function entryFilters(req) {
   if (req.query.payment_mode) { where.push('e.payment_mode = ?'); params.push(String(req.query.payment_mode)); }
   if (req.query.q) {
     const q = `%${String(req.query.q).trim()}%`;
-    where.push('(e.devotee_name LIKE ? OR e.mobile LIKE ? OR e.whatsapp LIKE ? OR CAST(e.receipt_no AS TEXT) = ?)');
-    params.push(q, q, q, String(req.query.q).trim());
+    // receipt search works with or without the dash: "TG-12" or "tg12"
+    const r = String(req.query.q).trim().toUpperCase();
+    where.push("(e.devotee_name LIKE ? OR e.mobile LIKE ? OR e.whatsapp LIKE ? OR e.code || '-' || e.seq = ? OR e.code || e.seq = ?)");
+    params.push(q, q, q, r, r);
   }
   return { sql: where.join(' AND '), params };
 }
 
 const LIST_SQL = `
-  SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile, COALESCE(p.name, u.name) AS team_name,
+  SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile, COALESCE(p.name, u.name) AS team_name, e.code || '-' || e.seq AS receipt,
     (SELECT group_concat(st.name, ', ') FROM entry_sevas es JOIN seva_types st ON st.id = es.seva_type_id WHERE es.entry_id = e.id) AS seva_names
   FROM entries e JOIN mandals m ON m.id = e.mandal_id JOIN users u ON u.id = e.karyakar_id LEFT JOIN users p ON p.id = u.parent_id`;
 
@@ -291,7 +293,7 @@ app.get('/api/entries', h((req, res) => {
 app.get('/api/entries/check-mobile', h((req, res) => {
   const ev = activeEvent();
   const mobile = cleanMobile(req.query.mobile);
-  const rows = ev && mobile.length === 10 ? db.prepare(`SELECT e.id, e.receipt_no, e.devotee_name, e.amount, u.name AS karyakar_name
+  const rows = ev && mobile.length === 10 ? db.prepare(`SELECT e.id, e.code || '-' || e.seq AS receipt, e.devotee_name, e.amount, u.name AS karyakar_name
     FROM entries e JOIN users u ON u.id = e.karyakar_id WHERE e.event_id = ? AND e.mobile = ? AND e.id != ?`)
     .all(ev.id, mobile, toInt(req.query.exclude) || 0) : [];
   // Also return last year's details so the karyakar can auto-fill a returning devotee
@@ -311,10 +313,12 @@ app.post('/api/entries', h((req, res) => {
   if (!ev) fail(400, 'કોઈ ચાલુ ઉત્સવ નથી. એડમિન ને જણાવો.');
   const d = validateEntry(req.body);
   const id = transaction(() => {
+    // receipt_no: overall running number (internal); code + seq: the person's own number shown as TG-12
     const next = db.prepare('SELECT COALESCE(MAX(receipt_no), 0) + 1 AS n FROM entries WHERE event_id = ?').get(ev.id).n;
-    const r = db.prepare(`INSERT INTO entries (event_id, receipt_no, mandal_id, devotee_name, address, mobile, whatsapp,
-      amount, payment_mode, payment_ref, paid, notes, karyakar_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(ev.id, next, d.mandal_id, d.devotee_name, d.address, d.mobile, d.whatsapp,
+    const seq = db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM entries WHERE event_id = ? AND code = ?').get(ev.id, req.user.code).n;
+    const r = db.prepare(`INSERT INTO entries (event_id, receipt_no, code, seq, mandal_id, devotee_name, address, mobile, whatsapp,
+      amount, payment_mode, payment_ref, paid, notes, karyakar_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(ev.id, next, req.user.code, seq, d.mandal_id, d.devotee_name, d.address, d.mobile, d.whatsapp,
         d.amount, d.payment_mode, d.payment_ref, d.paid, d.notes, req.user.id);
     saveSevas(r.lastInsertRowid, d.seva_ids);
     return Number(r.lastInsertRowid);
@@ -368,7 +372,7 @@ app.get('/api/stats', adminOnly, h((req, res) => {
 function buildSummary(req) {
   const user = req.user;
   const sevaTypes = db.prepare('SELECT id, name, amount FROM seva_types ORDER BY sort, id').all();
-  const people = db.prepare(`SELECT u.id, u.name, u.mobile, u.role, u.parent_id, m.name AS mandal_name,
+  const people = db.prepare(`SELECT u.id, u.name, u.code, u.mobile, u.role, u.parent_id, m.name AS mandal_name,
       COALESCE(p.name, u.name) AS team_name, COALESCE(u.parent_id, u.id) AS team_id
     FROM users u LEFT JOIN mandals m ON m.id = u.mandal_id LEFT JOIN users p ON p.id = u.parent_id
     WHERE u.approved = 1 AND ${user.role === 'admin' ? '1 = 1' : '(u.id = ? OR u.parent_id = ?)'}
@@ -409,16 +413,16 @@ const ROLE_NAME = { admin: 'એડમિન', karyakar: 'કાર્યકર',
 function summaryCsv(req) {
   const { sevaTypes, rows } = buildSummary(req);
   return toCsv(
-    ['કાર્યકર (ટીમ)', 'નામ', 'ભૂમિકા', 'મોબાઇલ', 'મંડળ', 'એન્ટ્રી', 'કુલ રકમ', 'બાકી રકમ', ...sevaTypes.map((s) => s.name)],
+    ['કાર્યકર (ટીમ)', 'નામ', 'કોડ', 'ભૂમિકા', 'મોબાઇલ', 'મંડળ', 'એન્ટ્રી', 'કુલ રકમ', 'બાકી રકમ', ...sevaTypes.map((s) => s.name)],
     rows.map((r) => r.type === 'team'
-      ? [r.team_name, `કુલ - ${r.team_name} ટીમ`, '', '', '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]
-      : [r.team_name, r.name, ROLE_NAME[r.role], r.mobile, r.mandal_name || '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]));
+      ? [r.team_name, `કુલ - ${r.team_name} ટીમ`, '', '', '', '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]
+      : [r.team_name, r.name, r.code, ROLE_NAME[r.role], r.mobile, r.mandal_name || '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]));
 }
 
 function entriesCsv(req) {
   const f = entryFilters(req);
   const rows = db.prepare(`${LIST_SQL} WHERE ${f.sql} ORDER BY e.receipt_no`).all(...f.params);
-  const cols = [['receipt_no', 'રસીદ નં'], ['created_at', 'તારીખ'], ['mandal_name', 'મંડળ'], ['devotee_name', 'નામ'],
+  const cols = [['receipt', 'રસીદ નં'], ['created_at', 'તારીખ'], ['mandal_name', 'મંડળ'], ['devotee_name', 'નામ'],
     ['address', 'સરનામું'], ['mobile', 'મોબાઇલ'], ['whatsapp', 'WhatsApp'], ['seva_names', 'સેવા'], ['amount', 'રકમ'],
     ['payment_mode', 'ચુકવણી'], ['payment_ref', 'Ref'], ['karyakar_name', 'અન્નકૂટ સેવક'], ['team_name', 'કાર્યકર (ટીમ)'], ['notes', 'નોંધ']];
   return toCsv(cols.map((c) => c[1]), rows.map((r) => cols.map((c) => r[c[0]])));
@@ -459,7 +463,7 @@ app.get('/sheets/:token/entries.csv', sheetUser, h((req, res) => sendCsv(res, en
 // ---------- users: admin manages everyone, a karyakar manages their own annakut sevaks ----------
 app.get('/api/users', leadOnly, (req, res) => {
   const mine = req.user.role === 'karyakar';
-  res.json(db.prepare(`SELECT u.id, u.name, u.mobile, u.role, u.mandal_id, u.parent_id, u.active, u.approved,
+  res.json(db.prepare(`SELECT u.id, u.name, u.code, u.mobile, u.role, u.mandal_id, u.parent_id, u.active, u.approved,
     m.name AS mandal_name, p.name AS parent_name, u.created_at,
     (SELECT COUNT(*) FROM entries e WHERE e.karyakar_id = u.id) AS entry_count,
     (SELECT COALESCE(SUM(amount), 0) FROM entries e WHERE e.karyakar_id = u.id AND e.event_id = ?) AS event_total,
@@ -471,7 +475,7 @@ app.get('/api/users', leadOnly, (req, res) => {
 });
 
 // Clean up a user form. Karyakars can only ever create/edit annakut sevaks under themselves.
-function userData(body, actor) {
+function userData(body, actor, id) {
   const d = {
     name: str(body.name), mobile: cleanMobile(body.mobile),
     role: actor.role === 'admin' && ['admin', 'karyakar', 'sevak'].includes(body.role) ? body.role : (actor.role === 'admin' ? 'karyakar' : 'sevak'),
@@ -489,6 +493,14 @@ function userData(body, actor) {
     d.mandal_id = lead.mandal_id; // a sevak works in their karyakar's area
   }
   if (body.password && String(body.password).length < 6) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
+  // Code: typed one (2-4 English letters, unique) or made from the name; an existing code stays unless changed
+  d.code = String(body.code || '').trim().toUpperCase();
+  if (d.code) {
+    if (!CODE_RE.test(d.code)) fail(400, 'કોડ 2 થી 4 અંગ્રેજી અક્ષરનો રાખો (દા.ત. TG)');
+    if (codeTaken(d.code, id)) fail(400, 'આ કોડ બીજા કોઈનો છે');
+  } else {
+    d.code = (id && db.prepare('SELECT code FROM users WHERE id = ?').get(id)?.code) || makeCode(d.name, id);
+  }
   return d;
 }
 
@@ -502,22 +514,22 @@ function editableUser(req) {
 app.post('/api/users', leadOnly, h((req, res) => {
   const d = userData(req.body, req.user);
   if (!req.body.password) fail(400, 'પાસવર્ડ ઓછામાં ઓછો 6 અક્ષરનો રાખો');
-  db.prepare('INSERT INTO users (name, mobile, password_hash, role, mandal_id, parent_id, active, approved) VALUES (?,?,?,?,?,?,?,1)')
-    .run(d.name, d.mobile, hashPassword(String(req.body.password)), d.role, d.mandal_id, d.parent_id, d.active);
+  db.prepare('INSERT INTO users (name, mobile, password_hash, role, mandal_id, parent_id, active, approved, code) VALUES (?,?,?,?,?,?,?,1,?)')
+    .run(d.name, d.mobile, hashPassword(String(req.body.password)), d.role, d.mandal_id, d.parent_id, d.active, d.code);
   res.json({ ok: true });
 }));
 
 app.put('/api/users/:id', leadOnly, h((req, res) => {
   const target = editableUser(req);
   const id = target.id;
-  const d = userData(req.body, req.user);
+  const d = userData(req.body, req.user, id);
   if (id === req.user.id && (d.role !== 'admin' || !d.active)) fail(400, 'તમે પોતાને એડમિન માંથી દૂર ન કરી શકો');
   if (d.role !== 'karyakar' && db.prepare('SELECT 1 FROM users WHERE parent_id = ?').get(id)) {
     fail(400, 'આ કાર્યકર નીચે અન્નકૂટ સેવક છે. પહેલા તેમને બીજા કાર્યકર નીચે મૂકો.');
   }
   transaction(() => {
-    db.prepare('UPDATE users SET name=?, mobile=?, role=?, mandal_id=?, parent_id=?, active=?, approved=? WHERE id=?')
-      .run(d.name, d.mobile, d.role, d.mandal_id, d.parent_id, d.active, d.approved, id);
+    db.prepare('UPDATE users SET name=?, mobile=?, role=?, mandal_id=?, parent_id=?, active=?, approved=?, code=? WHERE id=?')
+      .run(d.name, d.mobile, d.role, d.mandal_id, d.parent_id, d.active, d.approved, d.code, id);
     // Moving a karyakar to a new area moves their sevaks too
     if (d.role === 'karyakar') db.prepare('UPDATE users SET mandal_id = ? WHERE parent_id = ?').run(d.mandal_id, id);
     if (req.body.password) db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(String(req.body.password)), id);

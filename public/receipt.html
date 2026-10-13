@@ -34,7 +34,7 @@
             <div class="s">${t('જમોને જમાડું રે...')}</div>
             <div style="font-size:14px">${esc(e.event_place || '')}${e.event_date ? ' · ' + t('તા.') + ' ' + esc(e.event_date.split('-').reverse().join('-')) : ''}</div>
           </div>
-          ${line('રસીદ નં.', '<b style="font-size:20px;color:var(--magenta)">' + e.receipt_no + '</b>')}
+          ${line('રસીદ નં.', '<b style="font-size:20px;color:var(--magenta)">' + e.receipt + '</b>')}
           ${line('તારીખ', esc(e.created_at))}
           ${line('મંડળ', esc(e.mandal_name))}
           ${line('નામ', esc(e.devotee_name))}

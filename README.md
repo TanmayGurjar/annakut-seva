@@ -23,6 +23,13 @@ To use your own number from the start, delete the `data` folder and run:
 | **Karyakar** (one area, e.g. Narsang Tekri) | Add seva entries; see/edit their own **and their annakut sevaks'** entries; add/approve annakut sevaks; team summary + Google Sheets |
 | **Annakut Sevak** (works under one karyakar) | Registers from the login page ("નોંધણી કરો"), can log in once their karyakar approves. Adds entries, sees/edits **only their own**, sends WhatsApp receipts |
 
+## Receipt numbers: TG-1, TG-2 … NV-1
+
+Every person has a unique short **code** made from the initials of their name (તન્મય ગુર્જર → **TG**, નિલેશભાઇ વિસાવાડીયા → **NV**).
+If two names give the same code, the second gets 3 letters (e.g. **BVP**). Admin / karyakar can change a code (2–4 English letters).
+Each entry's receipt is the code of whoever entered it plus their own running number: **TG-1, TG-2 …**, starting again from 1 each festival.
+Search works with or without the dash (`TG-12` or `tg12`). The code tells you the person, and through their karyakar, the area.
+
 Only the admin creates karyakars. Annakut sevaks either register themselves (karyakar approves under **👥 મારી ટીમ**) or are added directly by their karyakar.
 
 ## Summary in Google Sheets

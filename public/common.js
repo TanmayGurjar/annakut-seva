@@ -85,6 +85,11 @@ const EN = {
   'કુલ સેવા રકમ': 'Total Seva Amount',
   'કુલ એન્ટ્રી': 'Total Entries',
   'બાકી રકમ': 'Pending Amount',
+  'કોડ': 'Code',
+  'કોડ (રસીદ માટે, દા.ત. TG → TG-1, TG-2) - ખાલી રાખો તો નામ પરથી બનશે': 'Code (for receipts, e.g. TG → TG-1, TG-2) - leave blank to make it from the name',
+  '(રસીદ માટે, દા.ત. TG → TG-1. ખાલી રાખો તો નામ પરથી બનશે)': '(for receipts, e.g. TG → TG-1. Leave blank to make it from the name)',
+  'કોડ 2 થી 4 અંગ્રેજી અક્ષરનો રાખો (દા.ત. TG)': 'Code must be 2 to 4 English letters (e.g. TG)',
+  'આ કોડ બીજા કોઈનો છે': 'This code already belongs to someone else',
   'મંડળ પ્રમાણે': 'By Mandal',
   'થાળ / સેવા પ્રમાણે': 'By Thal / Seva',
   'કાર્યકર પ્રમાણે': 'By Karyakar',
@@ -334,7 +339,7 @@ function whatsappLink(e) {
     t('જય સ્વામિનારાયણ 🙏'),
     t('{0}, આપની અન્નકૂટ સેવા નોંધાઈ ગઈ છે.', e.devotee_name),
     '',
-    t('રસીદ નં: {0}', e.receipt_no),
+    t('રસીદ નં: {0}', e.receipt),
     t('સેવા: {0}', sevas),
     t('રકમ: ₹{0}/-', e.amount),
     t('અન્નકૂટ સેવક: {0}', `${e.karyakar_name || ''}${e.karyakar_mobile ? ' (' + e.karyakar_mobile + ')' : ''}`),
@@ -357,7 +362,7 @@ function summaryTable(data) {
     ? `<tr class="team-row"><td>${t('કુલ - {0} ટીમ', esc(r.team_name))}</td><td>${t('{0} વ્યક્તિ', r.members)}</td>
         <td class="num">${r.count}</td><td class="num">${rupees(r.total)}</td><td class="num">${rupees(r.pending)}</td>
         ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id]}</td>`).join('')}</tr>`
-    : `<tr><td>${esc(r.name)}<br><small style="color:var(--muted)">${r.mobile}</small></td><td>${roleBadge(r.role)}</td>
+    : `<tr><td>${esc(r.name)} <b>${esc(r.code || '')}</b><br><small style="color:var(--muted)">${r.mobile}</small></td><td>${roleBadge(r.role)}</td>
         <td class="num">${r.count}</td><td class="num">${rupees(r.total)}</td><td class="num">${rupees(r.pending)}</td>
         ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id] || ''}</td>`).join('')}</tr>`).join('');
   return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
