@@ -608,12 +608,37 @@ app.put('/api/events/:id', adminOnly, h((req, res) => {
 }));
 
 // Current internet link of the free Cloudflare tunnel (changes on every laptop restart), read from its log
-app.get('/api/public-url', leadOnly, (req, res) => {
+const TUNNEL_LOG = path.join(DATA_DIR, 'logs', 'tunnel.log');
+function tunnelUrl() {
   let log = '';
-  try { log = fs.readFileSync(path.join(DATA_DIR, 'logs', 'tunnel.log'), 'utf8'); } catch {}
+  try { log = fs.readFileSync(TUNNEL_LOG, 'utf8'); } catch {}
   const urls = log.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/g);
-  res.json({ url: urls ? urls[urls.length - 1] : null });
-});
+  return urls ? urls[urls.length - 1] : null;
+}
+app.get('/api/public-url', leadOnly, (req, res) => res.json({ url: tunnelUrl() }));
+
+// Tunnel watchdog: a quick tunnel can die on Cloudflare's side ("Tunnel not found") while cloudflared keeps
+// retrying forever. If our own public link fails 3 checks in a row, stop cloudflared so run-tunnel.cmd starts
+// a fresh tunnel (new link, shown on the dashboard). Only runs when the tunnel is in use (Windows laptop).
+const WATCH_EVERY = Number(process.env.TUNNEL_WATCH_MS) || 60000;
+const WATCH_FAILS = 3;
+let watchUrl = null, watchFails = 0, watchSince = 0;
+async function watchTunnel() {
+  const url = tunnelUrl();
+  if (!url || process.platform !== 'win32') return;
+  if (url !== watchUrl) { watchUrl = url; watchFails = 0; watchSince = Date.now(); return; }
+  if (Date.now() - watchSince < 2 * WATCH_EVERY) return; // give a new link time to appear in DNS
+  try {
+    const r = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(15000) });
+    watchFails = r.ok ? 0 : watchFails + 1;
+  } catch { watchFails++; }
+  if (watchFails >= WATCH_FAILS) {
+    console.log(`[${new Date().toISOString()}] public link ${url} not reachable, restarting tunnel`);
+    require('child_process').execFile(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
+      ['/F', '/IM', 'cloudflared.exe'], () => {});
+    watchFails = 0; watchSince = Date.now();
+  }
+}
 
 // ---------- admin: backup download (keep a copy off this computer) ----------
 app.get('/api/backup.db', adminOnly, h((req, res) => {
@@ -638,6 +663,7 @@ const timer = setInterval(() => {
   dailyBackup();
   for (const key of failedLogins.keys()) failCount(key);
 }, 6 * 3600000);
+const tunnelTimer = setInterval(() => watchTunnel().catch(() => {}), WATCH_EVERY);
 
 // data/server.pid lets scripts\windows\stop-server.ps1 stop exactly this app
 const PID_FILE = path.join(DATA_DIR, 'server.pid');
@@ -649,6 +675,7 @@ const server = app.listen(PORT, () => {
 // Close the database cleanly when stopped (Ctrl+C, service stop, host restart)
 function shutdown() {
   clearInterval(timer);
+  clearInterval(tunnelTimer);
   fs.rmSync(PID_FILE, { force: true });
   server.close(() => { db.close(); process.exit(0); });
   setTimeout(() => process.exit(0), 5000).unref();
