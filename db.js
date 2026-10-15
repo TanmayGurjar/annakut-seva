@@ -204,6 +204,71 @@ function seed() {
 }
 seed();
 
+// ---------- prasad boxes ----------
+// Each seva gives boxes: option 1 (always) and an optional option 2 the sevak can pick instead,
+// e.g. ₹501: 1 plastic box OR 2 paper boxes. An entry with no seva ticked and a small amount
+// (below the cheapest seva) gets 1 small paper box. Boxes of all sevas in an entry are added up.
+db.exec(`
+CREATE TABLE IF NOT EXISTS box_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS entry_boxes (
+  entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+  box_type_id INTEGER NOT NULL REFERENCES box_types(id),
+  qty INTEGER NOT NULL,
+  PRIMARY KEY (entry_id, box_type_id)
+);`);
+const addColumn = (table, col, type) => {
+  if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+};
+addColumn('seva_types', 'opt1_box', 'INTEGER REFERENCES box_types(id)');
+addColumn('seva_types', 'opt1_qty', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('seva_types', 'opt2_box', 'INTEGER REFERENCES box_types(id)');
+addColumn('seva_types', 'opt2_qty', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('seva_types', 'box_set', 'INTEGER NOT NULL DEFAULT 0'); // 1 once boxes were set up for this seva
+addColumn('entry_sevas', 'box_option', 'INTEGER NOT NULL DEFAULT 1');
+
+const insBox = db.prepare('INSERT OR IGNORE INTO box_types (key, name, sort) VALUES (?, ?, ?)');
+[['small_paper', 'નાનું પેપર બોક્સ', 1], ['paper', 'પેપર બોક્સ', 2], ['plastic', 'પ્લાસ્ટિક બોક્સ', 3]].forEach((b) => insBox.run(...b));
+const boxId = (key) => db.prepare('SELECT id FROM box_types WHERE key = ?').get(key).id;
+
+// Starting rules (admin can change them in the સેવા/થાળ tab): up to ₹201 -> 1 paper box,
+// ₹501 / ₹1001 -> 1 plastic box or 2 paper boxes, bigger sevas -> 1 plastic box
+db.prepare('SELECT id, amount FROM seva_types WHERE box_set = 0').all().forEach((s) => {
+  const [o1, q1, o2, q2] = s.amount < 501 ? [boxId('paper'), 1, null, 1]
+    : s.amount <= 1001 ? [boxId('plastic'), 1, boxId('paper'), 2]
+      : [boxId('plastic'), 1, null, 1];
+  db.prepare('UPDATE seva_types SET opt1_box = ?, opt1_qty = ?, opt2_box = ?, opt2_qty = ?, box_set = 1 WHERE id = ?').run(o1, q1, o2, q2, s.id);
+});
+
+// Boxes for one entry from its sevas (+ chosen option) and amount: Map box_type_id -> qty
+function computeBoxes(entryId) {
+  const boxes = new Map();
+  const add = (id, qty) => { if (id && qty > 0) boxes.set(id, (boxes.get(id) || 0) + qty); };
+  const sevas = db.prepare(`SELECT es.box_option, st.opt1_box, st.opt1_qty, st.opt2_box, st.opt2_qty
+    FROM entry_sevas es JOIN seva_types st ON st.id = es.seva_type_id WHERE es.entry_id = ?`).all(entryId);
+  sevas.forEach((s) => (s.box_option === 2 && s.opt2_box ? add(s.opt2_box, s.opt2_qty) : add(s.opt1_box, s.opt1_qty)));
+  if (!sevas.length) {
+    const { amount } = db.prepare('SELECT amount FROM entries WHERE id = ?').get(entryId);
+    if (amount < smallBoxLimit()) add(boxId('small_paper'), 1);
+  }
+  return boxes;
+}
+// Amounts below the cheapest seva (₹201) get a small paper box
+const smallBoxLimit = () => db.prepare('SELECT MIN(amount) AS m FROM seva_types WHERE active = 1').get().m || 201;
+
+function saveBoxes(entryId) {
+  db.prepare('DELETE FROM entry_boxes WHERE entry_id = ?').run(entryId);
+  const ins = db.prepare('INSERT INTO entry_boxes (entry_id, box_type_id, qty) VALUES (?, ?, ?)');
+  computeBoxes(entryId).forEach((qty, id) => ins.run(entryId, id, qty));
+}
+
+// Older entries: work out their boxes once
+db.prepare('SELECT id FROM entries WHERE id NOT IN (SELECT entry_id FROM entry_boxes)').all().forEach((e) => saveBoxes(e.id));
+
 // Safe copy of the whole database (works while the app is running)
 function backupTo(file) {
   db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
@@ -232,4 +297,4 @@ function dailyBackup() {
   }
 }
 
-module.exports = { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE };
+module.exports = { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE, saveBoxes, smallBoxLimit };

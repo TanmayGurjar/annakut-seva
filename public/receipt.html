@@ -41,6 +41,7 @@
           ${line('સરનામું', esc(e.address))}
           ${line('મો.નં.', esc(e.mobile))}
           ${line('સેવા', esc(e.sevas.map((s) => s.name).join(', ')))}
+          ${line('પ્રસાદ બોક્સ', esc(e.box_text))}
           ${line('સેવાની રકમ', '<span class="total">' + rupees(e.amount) + '/-</span>')}
           ${line('ચુકવણી', PAYMENT[e.payment_mode] + (e.payment_ref ? ' (' + esc(e.payment_ref) + ')' : ''))}
           ${line('અન્નકૂટ સેવક', esc(e.karyakar_name))}

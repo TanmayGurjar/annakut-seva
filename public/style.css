@@ -127,3 +127,12 @@ tr.pending-row td { background: #fff4e0; }
 .link-btn { background: none; border: 0; color: var(--magenta); text-decoration: underline; padding: 4px; font-weight: 600; cursor: pointer; }
 .formula { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: #f7efdc; border-radius: 8px; padding: 10px; word-break: break-all; }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0; }
+
+/* prasad boxes on the entry form */
+.boxes { border: 1.5px dashed var(--saffron); border-radius: 8px; padding: 8px 12px; background: #fffaf0; }
+.box-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.box-line > span:first-child { font-weight: 600; min-width: 110px; }
+.box-line .check { margin: 0; }
+.box-line .or { color: var(--muted); font-size: 13px; }
+.box-total { padding-top: 8px; color: var(--green); }
+th.box-col, td.box-col { background: #fff8ec; }

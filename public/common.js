@@ -86,6 +86,25 @@ const EN = {
   'કુલ એન્ટ્રી': 'Total Entries',
   'બાકી રકમ': 'Pending Amount',
   'કોડ': 'Code',
+  '🎁 પ્રસાદ બોક્સ': '🎁 Prasad Box',
+  'પ્રસાદ બોક્સ': 'Prasad boxes',
+  'નાનું પેપર બોક્સ': 'small paper box',
+  'પેપર બોક્સ': 'paper box',
+  'પ્લાસ્ટિક બોક્સ': 'plastic box',
+  'અથવા': 'or',
+  '₹{0} થી ઓછી સેવા': 'Seva below ₹{0}',
+  'આ રકમ માટે બોક્સ નથી - બોક્સ માટે ઉપર સેવા પસંદ કરો.': 'No box for this amount - tick a seva above to give a box.',
+  'સેવા પસંદ કરો અથવા રકમ લખો.': 'Select a seva or enter the amount.',
+  'હજુ નથી': 'none yet',
+  '📊 મારો સારાંશ': '📊 My Summary',
+  'પ્રસાદ: {0}': 'Prasad: {0}',
+  '📦 પ્રસાદ બોક્સ': '📦 Prasad Boxes',
+  'બોક્સ': 'Box',
+  'બોક્સ - વિકલ્પ 1': 'Box - option 1',
+  'સંખ્યા (વિકલ્પ 1)': 'How many (option 1)',
+  'બોક્સ - વિકલ્પ 2 (સેવક પસંદ કરી શકે, વૈકલ્પિક)': 'Box - option 2 (sevak can pick instead, optional)',
+  'સંખ્યા (વિકલ્પ 2)': 'How many (option 2)',
+  '-- બોક્સ નહીં --': '-- no box --',
   '🔍 નામ / મોબાઇલ / કોડ': '🔍 Name / mobile / code',
   'બધા (કાર્યકર + સેવક)': 'Everyone (karyakars + sevaks)',
   'ફક્ત કાર્યકર': 'Only karyakars',
@@ -352,6 +371,7 @@ function whatsappLink(e) {
     '',
     t('રસીદ નં: {0}', e.receipt),
     t('સેવા: {0}', sevas),
+    ...(e.box_text ? [t('પ્રસાદ: {0}', e.box_text)] : []),
     t('રકમ: ₹{0}/-', e.amount),
     t('અન્નકૂટ સેવક: {0}', `${e.karyakar_name || ''}${e.karyakar_mobile ? ' (' + e.karyakar_mobile + ')' : ''}`),
     '',
@@ -368,14 +388,17 @@ const roleBadge = (r) => `<span class="badge role-${r}">${t(ROLE[r] || r)}</span
 function summaryTable(data) {
   if (!data.rows.length) return '<p style="color:var(--muted)">' + t('હજુ ડેટા નથી') + '</p>';
   const head = `<tr><th>${t('નામ')}</th><th>${t('ભૂમિકા')}</th><th class="num">${t('એન્ટ્રી')}</th><th class="num">${t('રકમ')}</th>
-    <th class="num">${t('બાકી')}</th>${data.sevaTypes.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}</tr>`;
+    <th class="num">${t('બાકી')}</th>${data.sevaTypes.map((s) => `<th class="num">${esc(s.name)}</th>`).join('')}
+    ${(data.boxTypes || []).map((b) => `<th class="num box-col">📦 ${esc(t(b.name))}</th>`).join('')}</tr>`;
+  const boxCells = (r, blankZero) => (data.boxTypes || [])
+    .map((b) => `<td class="num box-col">${blankZero && !r.boxes[b.id] ? '' : r.boxes[b.id]}</td>`).join('');
   const body = data.rows.map((r) => r.type === 'team'
     ? `<tr class="team-row"><td>${t('કુલ - {0} ટીમ', esc(r.team_name))}</td><td>${t('{0} વ્યક્તિ', r.members)}</td>
         <td class="num">${r.count}</td><td class="num">${rupees(r.total)}</td><td class="num">${rupees(r.pending)}</td>
-        ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id]}</td>`).join('')}</tr>`
+        ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id]}</td>`).join('')}${boxCells(r)}</tr>`
     : `<tr><td>${esc(r.name)} <b>${esc(r.code || '')}</b><br><small style="color:var(--muted)">${r.mobile}</small></td><td>${roleBadge(r.role)}</td>
         <td class="num">${r.count}</td><td class="num">${rupees(r.total)}</td><td class="num">${rupees(r.pending)}</td>
-        ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id] || ''}</td>`).join('')}</tr>`).join('');
+        ${data.sevaTypes.map((s) => `<td class="num">${r.sevas[s.id] || ''}</td>`).join('')}${boxCells(r, true)}</tr>`).join('');
   return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 

@@ -52,6 +52,9 @@
         <label>સેવાની રકમ *</label>
         <div class="amount-box"><span>₹</span><input name="amount" type="number" inputmode="numeric" min="1" required></div>
 
+        <label>🎁 પ્રસાદ બોક્સ</label>
+        <div id="boxes" class="boxes"></div>
+
         <div class="row">
           <div>
             <label>ચુકવણી</label>
@@ -94,6 +97,11 @@
       <div class="stats">
         <div class="stat"><div class="v" id="myCount">0</div><div class="l">એન્ટ્રી</div></div>
         <div class="stat"><div class="v" id="myTotal">₹ 0</div><div class="l">કુલ સેવા</div></div>
+      </div>
+      <div class="card soft" id="myBoxes"></div>
+      <div class="card soft hidden" id="mySummaryBox">
+        <h3 style="margin-top:0">📊 મારો સારાંશ</h3>
+        <div class="table-wrap" id="mySummary"></div>
       </div>
       <input id="search" placeholder="🔍 નામ / મોબાઇલ / રસીદ નં. શોધો" style="margin-bottom:12px">
       <select id="who" class="hidden" style="margin-bottom:12px"></select>
@@ -164,12 +172,13 @@
     }
 
     function resetForm() {
-      form.reset(); editingId = null; amountTouched = false;
+      form.reset(); editingId = null; amountTouched = false; boxChoice = {};
       form.mandal_id.value = me.mandal_id || '';
       $('#waBox').classList.add('hidden');
       $('#mobileInfo').innerHTML = '';
       $('#formTitle').textContent = t('સેવા નોંધણી');
       $('#cancelEdit').classList.add('hidden');
+      renderBoxes();
     }
 
     function newEntry() {
@@ -184,11 +193,48 @@
 
     // Ticking seva boxes auto-fills the total (karyakar can still type a different amount)
     $('#sevas').addEventListener('change', () => {
-      if (amountTouched && form.amount.value) return;
-      const sum = $$('input[name=seva]:checked').reduce((s, c) => s + Number(c.dataset.amount), 0);
-      form.amount.value = sum || '';
+      if (!(amountTouched && form.amount.value)) {
+        const sum = $$('input[name=seva]:checked').reduce((s, c) => s + Number(c.dataset.amount), 0);
+        form.amount.value = sum || '';
+      }
+      renderBoxes();
     });
-    form.amount.addEventListener('input', () => { amountTouched = !!form.amount.value; });
+    form.amount.addEventListener('input', () => { amountTouched = !!form.amount.value; renderBoxes(); });
+
+    // ----- prasad boxes: fixed (ticked + locked) or a choice between two options per seva -----
+    let boxChoice = {}; // sevaId -> 1 | 2
+    const boxName = (id) => meta.boxTypes.find((b) => b.id === id)?.name || '';
+    const boxLabel = (id, qty) => `${qty} ${t(boxName(id))}`;
+    function pickBox(sevaId, option) { boxChoice[sevaId] = option; renderBoxes(); }
+    function renderBoxes() {
+      const ticked = $$('input[name=seva]:checked').map((c) => meta.sevaTypes.find((x) => String(x.id) === c.value));
+      const totals = {};
+      const add = (id, qty) => { if (id) totals[id] = (totals[id] || 0) + qty; };
+      let html = ticked.map((sv) => {
+        if (!sv.opt1_box) return '';
+        if (!sv.opt2_box) {
+          add(sv.opt1_box, sv.opt1_qty);
+          return `<div class="box-line"><span>${esc(sv.name)}</span>
+            <label class="check"><input type="checkbox" checked disabled> ${boxLabel(sv.opt1_box, sv.opt1_qty)}</label></div>`;
+        }
+        const pick = boxChoice[sv.id] === 2 ? 2 : 1;
+        add(sv[`opt${pick}_box`], sv[`opt${pick}_qty`]);
+        return `<div class="box-line"><span>${esc(sv.name)}</span>${[1, 2].map((o) => `
+          <label class="check"><input type="radio" name="box_${sv.id}" value="${o}" ${pick === o ? 'checked' : ''}
+            onchange="pickBox(${sv.id}, ${o})"> ${boxLabel(sv[`opt${o}_box`], sv[`opt${o}_qty`])}</label>`).join(`<span class="or">${t('અથવા')}</span>`)}</div>`;
+      }).join('');
+      const amount = Number(form.amount.value) || 0;
+      if (!ticked.length && amount > 0 && amount < meta.smallBoxLimit) {
+        const small = meta.boxTypes.find((b) => b.key === 'small_paper');
+        add(small.id, 1);
+        html += `<div class="box-line"><span>${t('₹{0} થી ઓછી સેવા', meta.smallBoxLimit)}</span>
+          <label class="check"><input type="checkbox" checked disabled> ${boxLabel(small.id, 1)}</label></div>`;
+      }
+      const total = Object.entries(totals).map(([id, q]) => boxLabel(Number(id), q)).join(', ');
+      $('#boxes').innerHTML = html + (total
+        ? `<div class="box-total">${t('કુલ')}: <b>${esc(total)}</b></div>`
+        : `<p class="hint">${t(amount ? 'આ રકમ માટે બોક્સ નથી - બોક્સ માટે ઉપર સેવા પસંદ કરો.' : 'સેવા પસંદ કરો અથવા રકમ લખો.')}</p>`);
+    }
 
     // After mobile is typed: warn about duplicates this year + offer last year's details
     form.mobile.addEventListener('input', async () => {
@@ -222,6 +268,7 @@
         mobile: form.mobile.value, whatsapp_same: form.whatsapp_same.checked, whatsapp: form.whatsapp.value,
         devotee_name: form.devotee_name.value, mandal_id: form.mandal_id.value, address: form.address.value,
         seva_ids: $$('input[name=seva]:checked').map((c) => Number(c.value)),
+        box_options: boxChoice,
         amount: form.amount.value, payment_mode: form.payment_mode.value, payment_ref: form.payment_ref.value, notes: form.notes.value,
       };
       $('#saveBtn').disabled = true;
@@ -238,6 +285,7 @@
       form.classList.add('hidden'); $('#doneBox').classList.remove('hidden');
       $('#doneReceipt').textContent = e.receipt;
       $('#doneDetails').innerHTML = `<b>${esc(e.devotee_name)}</b> · ${esc(e.mandal_name)}<br>${esc(e.sevas.map((s) => s.name).join(', '))}<br>
+        ${e.box_text ? '🎁 ' + esc(e.box_text) + '<br>' : ''}
         <b style="font-size:20px;color:var(--green)">${rupees(e.amount)}</b>${wasEdit ? '<br>' + t('(સુધારો સેવ થયો)') : ''}`;
       $('#doneWa').href = whatsappLink(e);
       $('#donePrint').href = `/receipt.html?id=${e.id}`;
@@ -259,6 +307,8 @@
         $('#waBox').classList.toggle('hidden', same);
         const ids = e.sevas.map((s) => String(s.seva_type_id));
         $$('input[name=seva]').forEach((c) => (c.checked = ids.includes(c.value)));
+        boxChoice = Object.fromEntries(e.sevas.map((s) => [s.seva_type_id, s.box_option]));
+        renderBoxes();
       } catch (err) { toast(err.message, true); }
     }
     $('#cancelEdit').onclick = newEntry;
@@ -277,10 +327,17 @@
       const r = await api('/api/entries?' + p);
       $('#myCount').textContent = r.rows.length;
       $('#myTotal').textContent = rupees(r.total);
+      $('#myBoxes').innerHTML = `<b>🎁 ${t('પ્રસાદ બોક્સ')}:</b> ` +
+        (r.boxes.filter((b) => b.qty).map((b) => `${b.qty} ${esc(t(b.name))}`).join(' · ') || t('હજુ નથી'));
+      if (me.role === 'sevak') {
+        $('#mySummaryBox').classList.remove('hidden');
+        $('#mySummary').innerHTML = summaryTable(await api('/api/summary'));
+      }
       $('#list').innerHTML = r.rows.map((e) => `
         <div class="entry-item">
           <div class="top"><span class="name">${e.receipt} · ${esc(e.devotee_name)}</span><span class="amt">${rupees(e.amount)}</span></div>
           <div class="meta">📱 ${e.mobile} · ${esc(e.mandal_name)} · ${esc(e.seva_names || '-')}
+            ${e.box_text ? ` · 🎁 ${esc(e.box_text)}` : ''}
             · <span class="badge ${e.paid ? '' : 'pending'}">${PAYMENT[e.payment_mode]}</span>
             ${e.karyakar_id !== me.id ? ` · 👤 ${esc(e.karyakar_name)}` : ''}</div>
           <div class="actions" style="justify-content:flex-start">

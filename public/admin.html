@@ -41,6 +41,7 @@
         <div class="card soft"><h3>કાર્યકર ટીમ પ્રમાણે</h3><div class="table-wrap" id="byKaryakar"></div></div>
         <div class="card soft"><h3>ચુકવણી પ્રમાણે</h3><div class="table-wrap" id="byPayment"></div></div>
       </div>
+      <div class="card soft"><h3 style="margin-top:0">📦 પ્રસાદ બોક્સ</h3><div class="stats" id="byBox" style="margin:0"></div></div>
       <div class="card soft">
         <div class="toolbar"><h3 class="grow" style="margin:0">📊 ટીમ સારાંશ (કાર્યકર → અન્નકૂટ સેવક)</h3>
           <select id="sumSeva" style="width:auto"></select></div>
@@ -103,7 +104,7 @@
     <!-- SEVA TYPES -->
     <section id="tab-sevas" class="hidden">
       <div class="toolbar"><div class="grow">થાળ / સેવાના પ્રકાર અને રકમ</div><button onclick="editSeva()">➕ નવી સેવા</button></div>
-      <div class="table-wrap"><table><thead><tr><th>ક્રમ</th><th>સેવા</th><th class="num">રકમ</th><th>સ્થિતિ</th><th></th></tr></thead><tbody id="sBody"></tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>ક્રમ</th><th>સેવા</th><th class="num">રકમ</th><th>📦 પ્રસાદ બોક્સ</th><th>સ્થિતિ</th><th></th></tr></thead><tbody id="sBody"></tbody></table></div>
     </section>
 
     <!-- EVENTS -->
@@ -175,6 +176,7 @@
       $('#byKaryakar').innerHTML = table(s.byKaryakar, [['કાર્યકર', (r) => esc(r.name)], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
       await loadSummary();
       await sheetsBox($('#sheets'), summaryQuery);
+      $('#byBox').innerHTML = s.byBox.map((b) => `<div class="stat"><div class="v">${b.qty}</div><div class="l">${esc(t(b.name))}</div></div>`).join('');
       $('#byPayment').innerHTML = table(s.byPayment, [['ચુકવણી', (r) => PAYMENT[r.payment_mode]], ['એન્ટ્રી', (r) => r.count, 'num'], ['રકમ', (r) => rupees(r.total), 'num']]);
     }
 
@@ -196,7 +198,7 @@
       $('#eBody').innerHTML = r.rows.map((e) => `<tr>
         <td><b>${e.receipt}</b></td><td>${esc(e.devotee_name)}</td>
         <td>${e.mobile}${e.whatsapp && e.whatsapp !== e.mobile ? '<br><small>WA ' + e.whatsapp + '</small>' : ''}</td>
-        <td>${esc(e.mandal_name)}</td><td>${esc(e.seva_names || '-')}</td><td class="num">${rupees(e.amount)}</td>
+        <td>${esc(e.mandal_name)}</td><td>${esc(e.seva_names || '-')}${e.box_text ? '<br><small>🎁 ' + esc(e.box_text) + '</small>' : ''}</td><td class="num">${rupees(e.amount)}</td>
         <td><span class="badge ${e.paid ? '' : 'pending'}">${PAYMENT[e.payment_mode]}</span></td>
         <td>${esc(e.karyakar_name)}${e.team_name !== e.karyakar_name ? '<br><small>👥 ' + esc(e.team_name) + '</small>' : ''}</td><td><small>${esc(e.created_at)}</small></td>
         <td style="white-space:nowrap"><a class="btn small secondary" href="/app.html?edit=${e.id}">✏</a>
@@ -282,15 +284,21 @@
     // ----- seva types -----
     function renderSevas() {
       $('#sBody').innerHTML = sevaTypes.map((s) => `<tr class="${s.active ? '' : 'inactive'}"><td>${s.sort}</td><td>${esc(s.name)}</td>
-        <td class="num">${rupees(s.amount)}</td><td>${status(s.active)}</td>
+        <td class="num">${rupees(s.amount)}</td><td>${s.opt1_name ? `${s.opt1_qty} ${esc(t(s.opt1_name))}` : '-'}
+          ${s.opt2_name ? ` <small>${t('અથવા')}</small> ${s.opt2_qty} ${esc(t(s.opt2_name))}` : ''}</td><td>${status(s.active)}</td>
         <td><button class="small secondary" onclick="editSeva(${s.id})">✏</button></td></tr>`).join('');
     }
     function editSeva(id) {
-      const s = sevaTypes.find((x) => x.id === id) || { active: 1, sort: sevaTypes.length + 1 };
+      const s = sevaTypes.find((x) => x.id === id) || { active: 1, sort: sevaTypes.length + 1, opt1_qty: 1, opt2_qty: 1 };
+      const boxOpts = [['', '-- બોક્સ નહીં --'], ...meta.boxTypes.map((b) => [b.id, b.name])];
       openDialog(id ? 'સેવા સુધારો' : 'નવી સેવા', [
         { name: 'name', label: 'સેવાનું નામ *', value: s.name },
         { name: 'amount', label: 'રકમ ₹ *', type: 'number', value: s.amount },
         { name: 'sort', label: 'ક્રમ', type: 'number', value: s.sort },
+        { name: 'opt1_box', label: 'બોક્સ - વિકલ્પ 1', type: 'select', value: s.opt1_box, options: boxOpts },
+        { name: 'opt1_qty', label: 'સંખ્યા (વિકલ્પ 1)', type: 'number', value: s.opt1_qty },
+        { name: 'opt2_box', label: 'બોક્સ - વિકલ્પ 2 (સેવક પસંદ કરી શકે, વૈકલ્પિક)', type: 'select', value: s.opt2_box, options: boxOpts },
+        { name: 'opt2_qty', label: 'સંખ્યા (વિકલ્પ 2)', type: 'number', value: s.opt2_qty },
         { name: 'active', label: 'ચાલુ (ફોર્મમાં દેખાય)', type: 'checkbox', value: s.active },
       ], (v) => api(id ? `/api/seva-types/${id}` : '/api/seva-types', { method: id ? 'PUT' : 'POST', body: v }));
     }

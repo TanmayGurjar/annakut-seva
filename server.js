@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
-const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE } = require('./db');
+const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE, saveBoxes, smallBoxLimit } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -196,6 +196,8 @@ app.get('/api/meta', (req, res) => {
     event: activeEvent() || null,
     mandals: db.prepare('SELECT * FROM mandals WHERE active = 1 ORDER BY name').all(),
     sevaTypes: db.prepare('SELECT * FROM seva_types WHERE active = 1 ORDER BY sort, id').all(),
+    boxTypes: db.prepare('SELECT * FROM box_types ORDER BY sort').all(),
+    smallBoxLimit: smallBoxLimit(),
   });
 });
 
@@ -206,8 +208,12 @@ function loadEntry(id) {
       ev.name AS event_name, ev.event_date, ev.place AS event_place, ev.time_text AS event_time
     FROM entries e JOIN mandals m ON m.id = e.mandal_id JOIN users u ON u.id = e.karyakar_id
     JOIN events ev ON ev.id = e.event_id WHERE e.id = ?`).get(id);
-  if (e) e.sevas = db.prepare(`SELECT es.seva_type_id, es.amount, st.name FROM entry_sevas es
+  if (!e) return e;
+  e.sevas = db.prepare(`SELECT es.seva_type_id, es.amount, es.box_option, st.name FROM entry_sevas es
     JOIN seva_types st ON st.id = es.seva_type_id WHERE es.entry_id = ? ORDER BY st.sort`).all(id);
+  e.boxes = db.prepare(`SELECT bt.id, bt.name, eb.qty FROM entry_boxes eb JOIN box_types bt ON bt.id = eb.box_type_id
+    WHERE eb.entry_id = ? ORDER BY bt.sort`).all(id);
+  e.box_text = e.boxes.map((b) => `${b.qty} ${b.name}`).join(', ');
   return e;
 }
 
@@ -239,6 +245,8 @@ function validateEntry(body) {
     payment_ref: str(body.payment_ref),
     notes: str(body.notes),
     seva_ids: Array.isArray(body.seva_ids) ? body.seva_ids.map(toInt).filter(Number.isFinite) : [],
+    // which prasad box option was picked per seva: { sevaId: 1 | 2 }
+    box_options: body.box_options && typeof body.box_options === 'object' ? body.box_options : {},
   };
   if (!data.devotee_name) fail(400, 'નામ લખો');
   if (data.mobile.length !== 10) fail(400, 'સાચો 10 આંકડાનો મોબાઇલ નંબર લખો');
@@ -249,10 +257,12 @@ function validateEntry(body) {
   return data;
 }
 
-function saveSevas(entryId, sevaIds) {
+// Save the ticked sevas (with the chosen box option) and work out the entry's prasad boxes
+function saveSevas(entryId, sevaIds, boxOptions = {}) {
   db.prepare('DELETE FROM entry_sevas WHERE entry_id = ?').run(entryId);
-  const ins = db.prepare('INSERT INTO entry_sevas (entry_id, seva_type_id, amount) SELECT ?, id, amount FROM seva_types WHERE id = ?');
-  [...new Set(sevaIds)].forEach((sid) => ins.run(entryId, sid));
+  const ins = db.prepare('INSERT INTO entry_sevas (entry_id, seva_type_id, amount, box_option) SELECT ?, id, amount, ? FROM seva_types WHERE id = ?');
+  [...new Set(sevaIds)].forEach((sid) => ins.run(entryId, toInt(boxOptions[sid]) === 2 ? 2 : 1, sid));
+  saveBoxes(entryId);
 }
 
 // Build a WHERE clause from list filters, always limited to what this user may see
@@ -280,13 +290,17 @@ function entryFilters(req) {
 
 const LIST_SQL = `
   SELECT e.*, m.name AS mandal_name, u.name AS karyakar_name, u.mobile AS karyakar_mobile, COALESCE(p.name, u.name) AS team_name, e.code || '-' || e.seq AS receipt,
-    (SELECT group_concat(st.name, ', ') FROM entry_sevas es JOIN seva_types st ON st.id = es.seva_type_id WHERE es.entry_id = e.id) AS seva_names
+    (SELECT group_concat(st.name, ', ') FROM entry_sevas es JOIN seva_types st ON st.id = es.seva_type_id WHERE es.entry_id = e.id) AS seva_names,
+    (SELECT group_concat(eb.qty || ' ' || bt.name, ', ') FROM entry_boxes eb JOIN box_types bt ON bt.id = eb.box_type_id WHERE eb.entry_id = e.id) AS box_text
   FROM entries e JOIN mandals m ON m.id = e.mandal_id JOIN users u ON u.id = e.karyakar_id LEFT JOIN users p ON p.id = u.parent_id`;
 
 app.get('/api/entries', h((req, res) => {
   const f = entryFilters(req);
   const rows = db.prepare(`${LIST_SQL} WHERE ${f.sql} ORDER BY e.id DESC`).all(...f.params);
-  res.json({ rows, total: rows.reduce((s, r) => s + r.amount, 0) });
+  const boxes = db.prepare(`SELECT bt.id, bt.name, COALESCE(SUM(eb.qty), 0) AS qty FROM box_types bt
+    LEFT JOIN (entry_boxes eb JOIN entries e ON e.id = eb.entry_id AND ${f.sql}) ON eb.box_type_id = bt.id
+    GROUP BY bt.id ORDER BY bt.sort`).all(...f.params);
+  res.json({ rows, total: rows.reduce((s, r) => s + r.amount, 0), boxes });
 }));
 
 // Warn karyakar if this devotee was already entered this year (by anyone)
@@ -320,7 +334,7 @@ app.post('/api/entries', h((req, res) => {
       amount, payment_mode, payment_ref, paid, notes, karyakar_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(ev.id, next, req.user.code, seq, d.mandal_id, d.devotee_name, d.address, d.mobile, d.whatsapp,
         d.amount, d.payment_mode, d.payment_ref, d.paid, d.notes, req.user.id);
-    saveSevas(r.lastInsertRowid, d.seva_ids);
+    saveSevas(r.lastInsertRowid, d.seva_ids, d.box_options);
     return Number(r.lastInsertRowid);
   });
   res.json(loadEntry(id));
@@ -336,7 +350,7 @@ app.put('/api/entries/:id', h((req, res) => {
       payment_ref=?, paid=?, notes=?, updated_at=datetime('now','localtime') WHERE id=?`)
       .run(d.mandal_id, d.devotee_name, d.address, d.mobile, d.whatsapp, d.amount, d.payment_mode,
         d.payment_ref, d.paid, d.notes, id);
-    saveSevas(id, d.seva_ids);
+    saveSevas(id, d.seva_ids, d.box_options);
   });
   res.json(loadEntry(id));
 }));
@@ -364,6 +378,9 @@ app.get('/api/stats', adminOnly, h((req, res) => {
       LEFT JOIN entries e ON e.karyakar_id = u.id AND e.event_id = ?
       WHERE t.role IN ('admin', 'karyakar') GROUP BY t.id HAVING count > 0 OR t.role = 'karyakar' ORDER BY total DESC`),
     byPayment: all(`SELECT payment_mode, COUNT(*) AS count, SUM(amount) AS total FROM entries WHERE event_id = ? GROUP BY payment_mode`),
+    byBox: all(`SELECT bt.name, COALESCE(SUM(eb.qty), 0) AS qty FROM box_types bt
+      LEFT JOIN (entry_boxes eb JOIN entries e ON e.id = eb.entry_id AND e.event_id = ?) ON eb.box_type_id = bt.id
+      GROUP BY bt.id ORDER BY bt.sort`),
   });
 }));
 
@@ -372,6 +389,7 @@ app.get('/api/stats', adminOnly, h((req, res) => {
 function buildSummary(req) {
   const user = req.user;
   const sevaTypes = db.prepare('SELECT id, name, amount FROM seva_types ORDER BY sort, id').all();
+  const boxTypes = db.prepare('SELECT id, name FROM box_types ORDER BY sort').all();
   const people = db.prepare(`SELECT u.id, u.name, u.code, u.mobile, u.role, u.parent_id, m.name AS mandal_name,
       COALESCE(p.name, u.name) AS team_name, COALESCE(u.parent_id, u.id) AS team_id
     FROM users u LEFT JOIN mandals m ON m.id = u.mandal_id LEFT JOIN users p ON p.id = u.parent_id
@@ -382,16 +400,20 @@ function buildSummary(req) {
   const totals = new Map(db.prepare(`SELECT e.karyakar_id AS uid, COUNT(*) AS count, SUM(e.amount) AS total,
       SUM(CASE WHEN e.paid = 0 THEN e.amount ELSE 0 END) AS pending FROM entries e WHERE ${f.sql} GROUP BY e.karyakar_id`)
     .all(...f.params).map((r) => [r.uid, r]));
+  const perBox = db.prepare(`SELECT e.karyakar_id AS uid, eb.box_type_id AS bid, SUM(eb.qty) AS q
+      FROM entries e JOIN entry_boxes eb ON eb.entry_id = e.id WHERE ${f.sql} GROUP BY 1, 2`).all(...f.params);
   const perSeva = db.prepare(`SELECT e.karyakar_id AS uid, es.seva_type_id AS sid, COUNT(*) AS c
       FROM entries e JOIN entry_sevas es ON es.entry_id = e.id WHERE ${f.sql} GROUP BY 1, 2`).all(...f.params);
 
-  const blank = () => ({ count: 0, total: 0, pending: 0, sevas: Object.fromEntries(sevaTypes.map((s) => [s.id, 0])) });
+  const blank = () => ({ count: 0, total: 0, pending: 0, sevas: Object.fromEntries(sevaTypes.map((s) => [s.id, 0])),
+    boxes: Object.fromEntries(boxTypes.map((b) => [b.id, 0])) });
   const rows = [];
   let team = null;
   for (const p of people) {
     const r = { type: 'person', ...p, ...blank(), ...(totals.get(p.id) || {}) };
-    r.sevas = blank().sevas;
+    Object.assign(r, { sevas: blank().sevas, boxes: blank().boxes });
     perSeva.filter((x) => x.uid === p.id).forEach((x) => { r.sevas[x.sid] = x.c; });
+    perBox.filter((x) => x.uid === p.id).forEach((x) => { r.boxes[x.bid] = x.q; });
     // Admins only show up when they entered something themselves
     if (p.role === 'admin' && !r.count) continue;
     if (!team || team.team_id !== p.team_id) {
@@ -402,8 +424,10 @@ function buildSummary(req) {
     team.members++;
     team.count += r.count; team.total += r.total; team.pending += r.pending;
     sevaTypes.forEach((s) => { team.sevas[s.id] += r.sevas[s.id]; });
+    boxTypes.forEach((b) => { team.boxes[b.id] += r.boxes[b.id]; });
   }
-  return { sevaTypes, rows };
+  // A sevak only sees their own row (their "team total" would just repeat it)
+  return { sevaTypes, boxTypes, rows: user.role === 'sevak' ? rows.filter((r) => r.type === 'person') : rows };
 }
 
 const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -411,19 +435,20 @@ const toCsv = (header, lines) => [header, ...lines].map((l) => l.map(csvCell).jo
 const ROLE_NAME = { admin: 'એડમિન', karyakar: 'કાર્યકર', sevak: 'અન્નકૂટ સેવક' };
 
 function summaryCsv(req) {
-  const { sevaTypes, rows } = buildSummary(req);
+  const { sevaTypes, boxTypes, rows } = buildSummary(req);
+  const counts = (r) => [...sevaTypes.map((s) => r.sevas[s.id]), ...boxTypes.map((b) => r.boxes[b.id])];
   return toCsv(
-    ['કાર્યકર (ટીમ)', 'નામ', 'કોડ', 'ભૂમિકા', 'મોબાઇલ', 'મંડળ', 'એન્ટ્રી', 'કુલ રકમ', 'બાકી રકમ', ...sevaTypes.map((s) => s.name)],
+    ['કાર્યકર (ટીમ)', 'નામ', 'કોડ', 'ભૂમિકા', 'મોબાઇલ', 'મંડળ', 'એન્ટ્રી', 'કુલ રકમ', 'બાકી રકમ', ...sevaTypes.map((s) => s.name), ...boxTypes.map((b) => '📦 ' + b.name)],
     rows.map((r) => r.type === 'team'
-      ? [r.team_name, `કુલ - ${r.team_name} ટીમ`, '', '', '', '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]
-      : [r.team_name, r.name, r.code, ROLE_NAME[r.role], r.mobile, r.mandal_name || '', r.count, r.total, r.pending, ...sevaTypes.map((s) => r.sevas[s.id])]));
+      ? [r.team_name, `કુલ - ${r.team_name} ટીમ`, '', '', '', '', r.count, r.total, r.pending, ...counts(r)]
+      : [r.team_name, r.name, r.code, ROLE_NAME[r.role], r.mobile, r.mandal_name || '', r.count, r.total, r.pending, ...counts(r)]));
 }
 
 function entriesCsv(req) {
   const f = entryFilters(req);
   const rows = db.prepare(`${LIST_SQL} WHERE ${f.sql} ORDER BY e.receipt_no`).all(...f.params);
   const cols = [['receipt', 'રસીદ નં'], ['created_at', 'તારીખ'], ['mandal_name', 'મંડળ'], ['devotee_name', 'નામ'],
-    ['address', 'સરનામું'], ['mobile', 'મોબાઇલ'], ['whatsapp', 'WhatsApp'], ['seva_names', 'સેવા'], ['amount', 'રકમ'],
+    ['address', 'સરનામું'], ['mobile', 'મોબાઇલ'], ['whatsapp', 'WhatsApp'], ['seva_names', 'સેવા'], ['box_text', 'પ્રસાદ બોક્સ'], ['amount', 'રકમ'],
     ['payment_mode', 'ચુકવણી'], ['payment_ref', 'Ref'], ['karyakar_name', 'અન્નકૂટ સેવક'], ['team_name', 'કાર્યકર (ટીમ)'], ['notes', 'નોંધ']];
   return toCsv(cols.map((c) => c[1]), rows.map((r) => cols.map((c) => r[c[0]])));
 }
@@ -434,9 +459,9 @@ function sendCsv(res, csv, filename) {
   res.send(filename ? '﻿' + csv : csv); // BOM for downloaded files so Gujarati always opens correctly
 }
 
-app.get('/api/summary', leadOnly, h((req, res) => res.json(buildSummary(req))));
-app.get('/api/summary.csv', leadOnly, h((req, res) => sendCsv(res, summaryCsv(req), 'annakut-summary.csv')));
-app.get('/api/export.csv', leadOnly, h((req, res) => sendCsv(res, entriesCsv(req), 'annakut-entries.csv')));
+app.get('/api/summary', h((req, res) => res.json(buildSummary(req))));
+app.get('/api/summary.csv', h((req, res) => sendCsv(res, summaryCsv(req), 'annakut-summary.csv')));
+app.get('/api/export.csv', h((req, res) => sendCsv(res, entriesCsv(req), 'annakut-entries.csv')));
 
 // ---------- live Google Sheets links ----------
 // A secret link per admin/karyakar. In Google Sheets: =IMPORTDATA("https://<site>/sheets/<token>/summary.csv")
@@ -563,20 +588,28 @@ app.put('/api/mandals/:id', adminOnly, h((req, res) => {
   res.json({ ok: true });
 }));
 
-app.get('/api/seva-types', adminOnly, (req, res) => res.json(db.prepare('SELECT * FROM seva_types ORDER BY sort, id').all()));
+app.get('/api/seva-types', adminOnly, (req, res) => res.json(db.prepare(`SELECT st.*, b1.name AS opt1_name, b2.name AS opt2_name
+  FROM seva_types st LEFT JOIN box_types b1 ON b1.id = st.opt1_box LEFT JOIN box_types b2 ON b2.id = st.opt2_box ORDER BY st.sort, st.id`).all()));
+// Prasad boxes per seva: option 1, and an optional option 2 the sevak can pick instead (changes apply to new/edited entries)
 function sevaData(b) {
-  const d = { name: str(b.name), amount: toInt(b.amount), sort: toInt(b.sort) || 0, active: b.active === false ? 0 : 1 };
+  const box = (v) => (db.prepare('SELECT 1 FROM box_types WHERE id = ?').get(toInt(v)) ? toInt(v) : null);
+  const qty = (v) => Math.min(Math.max(toInt(v) || 1, 1), 50);
+  const d = { name: str(b.name), amount: toInt(b.amount), sort: toInt(b.sort) || 0, active: b.active === false ? 0 : 1,
+    opt1_box: box(b.opt1_box), opt1_qty: qty(b.opt1_qty), opt2_box: box(b.opt2_box), opt2_qty: qty(b.opt2_qty) };
   if (!d.name || !(d.amount > 0)) fail(400, 'સેવાનું નામ અને રકમ લખો');
+  if (!d.opt1_box) d.opt2_box = null;
   return d;
 }
 app.post('/api/seva-types', adminOnly, h((req, res) => {
   const d = sevaData(req.body);
-  db.prepare('INSERT INTO seva_types (name, amount, sort, active) VALUES (?,?,?,?)').run(d.name, d.amount, d.sort, d.active);
+  db.prepare(`INSERT INTO seva_types (name, amount, sort, active, opt1_box, opt1_qty, opt2_box, opt2_qty, box_set)
+    VALUES (?,?,?,?,?,?,?,?,1)`).run(d.name, d.amount, d.sort, d.active, d.opt1_box, d.opt1_qty, d.opt2_box, d.opt2_qty);
   res.json({ ok: true });
 }));
 app.put('/api/seva-types/:id', adminOnly, h((req, res) => {
   const d = sevaData(req.body);
-  db.prepare('UPDATE seva_types SET name=?, amount=?, sort=?, active=? WHERE id=?').run(d.name, d.amount, d.sort, d.active, toInt(req.params.id));
+  db.prepare(`UPDATE seva_types SET name=?, amount=?, sort=?, active=?, opt1_box=?, opt1_qty=?, opt2_box=?, opt2_qty=?, box_set=1 WHERE id=?`)
+    .run(d.name, d.amount, d.sort, d.active, d.opt1_box, d.opt1_qty, d.opt2_box, d.opt2_qty, toInt(req.params.id));
   res.json({ ok: true });
 }));
 
