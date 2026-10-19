@@ -1,0 +1,17 @@
+[Unit]
+Description=Annakut Seva app
+After=network.target
+
+[Service]
+User=annakut
+WorkingDirectory=/opt/annakut-seva
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+Environment=DATA_DIR=/opt/annakut-seva/data
+
+[Install]
+WantedBy=multi-user.target

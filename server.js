@@ -59,9 +59,17 @@ const fail = (status, message) => { const e = new Error(message); e.status = sta
 // ---------- auth ----------
 // Behind Cloudflare Tunnel / a proxy the original scheme and visitor IP come in headers
 function isHttps(req) {
-  return req.secure || req.headers['x-forwarded-proto'] === 'https';
+  return req.secure || (LOCAL_IPS.has(req.socket.remoteAddress) && req.headers['x-forwarded-proto'] === 'https');
 }
-const clientIp = (req) => String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '');
+// Proxy headers are only trusted when the request comes from this machine (Caddy / cloudflared); the last
+// X-Forwarded-For entry is the one added by our own proxy, earlier ones can be faked by the visitor
+const LOCAL_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+function clientIp(req) {
+  const direct = req.socket.remoteAddress || '';
+  if (!LOCAL_IPS.has(direct)) return direct;
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return fwd[fwd.length - 1] || String(req.headers['cf-connecting-ip'] || direct);
+}
 
 function setSessionCookie(req, res, token, remember) {
   const age = remember ? `; Max-Age=${SESSION_DAYS * 86400}` : '';
@@ -700,7 +708,8 @@ const tunnelTimer = setInterval(() => watchTunnel().catch(() => {}), WATCH_EVERY
 
 // data/server.pid lets scripts\windows\stop-server.ps1 stop exactly this app
 const PID_FILE = path.join(DATA_DIR, 'server.pid');
-const server = app.listen(PORT, () => {
+// HOST=127.0.0.1 on a server so only Caddy can reach the app (default: all, so phones on the Wi-Fi work)
+const server = app.listen(PORT, process.env.HOST, () => {
   fs.writeFileSync(PID_FILE, String(process.pid));
   console.log(`Annakut Seva app running -> http://localhost:${PORT}`);
 });

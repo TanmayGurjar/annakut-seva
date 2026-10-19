@@ -93,8 +93,33 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\install-autostart.ps1
 - Phones on the same Wi-Fi can still use `http://<laptop-IP>:3000`.
 - Settings (port, extra backup folder, tunnel off): copy `settings.local.example.cmd` to `settings.local.cmd`.
 
-**Moving to a paid server later** (Hostinger, DigitalOcean, Lightsail, ~₹400–500/month): copy the `data` folder,
-run `npm install && npm start` there (Node 22.13+) behind HTTPS (Caddy/Nginx), set `DATA_DIR` if the data lives elsewhere.
+## Put it online (own server + domain, fixed link)
+
+**Buy:** a VPS (not "web/shared hosting") with Ubuntu 24.04, 1 CPU / 1 GB RAM, Mumbai region if offered
+(Hostinger KVM 1, DigitalOcean, AWS Lightsail, Hetzner, ~₹400–600/month), and a domain (~₹500–1000/year).
+The database is SQLite inside the app (`data/annakut.db`), so nothing else is needed.
+
+1. **DNS:** at the domain seller add an **A record**: name `@` (or e.g. `seva`), value = the server's IP.
+2. **Setup (once):** log in with `ssh root@<server-IP>` and run
+   ```
+   curl -fsSL https://raw.githubusercontent.com/TanmayGurjar/annakut-seva/main/scripts/linux/setup.sh -o setup.sh
+   bash setup.sh yourdomain.in
+   ```
+   This installs Node 22, Caddy (free automatic HTTPS) and a firewall, and runs the app as a service that
+   starts on boot and restarts by itself. The app listens only on `127.0.0.1:3000`; Caddy serves it on `https://yourdomain.in`.
+3. **Move the data:** on the laptop stop the app (`scripts\windows\stop-server.ps1`), then
+   ```
+   scp -r data root@<server-IP>:/opt/annakut-seva/
+   ssh root@<server-IP> "rm -f /opt/annakut-seva/data/server.pid && chown -R annakut:annakut /opt/annakut-seva/data && systemctl restart annakut"
+   ```
+   (Skip this to start empty: the first admin is `9999999999` / `admin123`, change it right away.)
+4. **Laptop off duty:** run `scripts\windows\uninstall-autostart.ps1` so only the server collects entries.
+   Re-create the live Google Sheet formulas with the new domain.
+
+**Updating the code:** push to GitHub, then on the server `bash /opt/annakut-seva/scripts/linux/update.sh` (data is not touched).
+**Status / logs:** `systemctl status annakut` · `journalctl -u annakut -f`.
+**Backups:** the server keeps daily copies in `/opt/annakut-seva/data/backups/`; also download one now and then
+from the admin page so a copy lives off the server.
 
 ## Ideas for later
 
