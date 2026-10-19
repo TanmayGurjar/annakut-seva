@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
-const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE, saveBoxes, smallBoxLimit } = require('./db');
+const { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE, saveBoxes, smallBoxLimit, BOX_RULES } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -603,13 +603,13 @@ function sevaData(b) {
 app.post('/api/seva-types', adminOnly, h((req, res) => {
   const d = sevaData(req.body);
   db.prepare(`INSERT INTO seva_types (name, amount, sort, active, opt1_box, opt1_qty, opt2_box, opt2_qty, box_set)
-    VALUES (?,?,?,?,?,?,?,?,1)`).run(d.name, d.amount, d.sort, d.active, d.opt1_box, d.opt1_qty, d.opt2_box, d.opt2_qty);
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(d.name, d.amount, d.sort, d.active, d.opt1_box, d.opt1_qty, d.opt2_box, d.opt2_qty, BOX_RULES);
   res.json({ ok: true });
 }));
 app.put('/api/seva-types/:id', adminOnly, h((req, res) => {
   const d = sevaData(req.body);
-  db.prepare(`UPDATE seva_types SET name=?, amount=?, sort=?, active=?, opt1_box=?, opt1_qty=?, opt2_box=?, opt2_qty=?, box_set=1 WHERE id=?`)
-    .run(d.name, d.amount, d.sort, d.active, d.opt1_box, d.opt1_qty, d.opt2_box, d.opt2_qty, toInt(req.params.id));
+  db.prepare(`UPDATE seva_types SET name=?, amount=?, sort=?, active=?, opt1_box=?, opt1_qty=?, opt2_box=?, opt2_qty=?, box_set=? WHERE id=?`)
+    .run(d.name, d.amount, d.sort, d.active, d.opt1_box, d.opt1_qty, d.opt2_box, d.opt2_qty, BOX_RULES, toInt(req.params.id));
   res.json({ ok: true });
 }));
 

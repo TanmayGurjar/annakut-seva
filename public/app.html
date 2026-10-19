@@ -211,7 +211,7 @@
       const totals = {};
       const add = (id, qty) => { if (id) totals[id] = (totals[id] || 0) + qty; };
       let html = ticked.map((sv) => {
-        if (!sv.opt1_box) return '';
+        if (!sv.opt1_box) return `<div class="box-line"><span>${esc(sv.name)}</span><small>${t('મોટું બોક્સ અલગથી આપવામાં આવે છે')}</small></div>`;
         if (!sv.opt2_box) {
           add(sv.opt1_box, sv.opt1_qty);
           return `<div class="box-line"><span>${esc(sv.name)}</span>

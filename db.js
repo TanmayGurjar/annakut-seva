@@ -236,12 +236,17 @@ const insBox = db.prepare('INSERT OR IGNORE INTO box_types (key, name, sort) VAL
 const boxId = (key) => db.prepare('SELECT id FROM box_types WHERE key = ?').get(key).id;
 
 // Starting rules (admin can change them in the સેવા/થાળ tab): up to ₹201 -> 1 paper box,
-// ₹501 / ₹1001 -> 1 plastic box or 2 paper boxes, bigger sevas -> 1 plastic box
-db.prepare('SELECT id, amount FROM seva_types WHERE box_set = 0').all().forEach((s) => {
+// ₹501 -> 2 paper boxes or 1 plastic box, ₹1001 -> 2 plastic boxes or 4 paper boxes, bigger sevas -> no box here
+// (the few big donors get a big box separately). box_set = 3 marks this latest set of rules,
+// so sevas set up with older rules are switched over once.
+const BOX_RULES = 3;
+const reset = db.prepare('SELECT id, amount FROM seva_types WHERE box_set < ?').all(BOX_RULES);
+reset.forEach((s) => {
   const [o1, q1, o2, q2] = s.amount < 501 ? [boxId('paper'), 1, null, 1]
-    : s.amount <= 1001 ? [boxId('plastic'), 1, boxId('paper'), 2]
-      : [boxId('plastic'), 1, null, 1];
-  db.prepare('UPDATE seva_types SET opt1_box = ?, opt1_qty = ?, opt2_box = ?, opt2_qty = ?, box_set = 1 WHERE id = ?').run(o1, q1, o2, q2, s.id);
+    : s.amount < 1001 ? [boxId('paper'), 2, boxId('plastic'), 1]
+      : s.amount <= 1001 ? [boxId('plastic'), 2, boxId('paper'), 4]
+        : [null, 1, null, 1];
+  db.prepare('UPDATE seva_types SET opt1_box = ?, opt1_qty = ?, opt2_box = ?, opt2_qty = ?, box_set = ? WHERE id = ?').run(o1, q1, o2, q2, BOX_RULES, s.id);
 });
 
 // Boxes for one entry from its sevas (+ chosen option) and amount: Map box_type_id -> qty
@@ -266,8 +271,9 @@ function saveBoxes(entryId) {
   computeBoxes(entryId).forEach((qty, id) => ins.run(entryId, id, qty));
 }
 
-// Older entries: work out their boxes once
-db.prepare('SELECT id FROM entries WHERE id NOT IN (SELECT entry_id FROM entry_boxes)').all().forEach((e) => saveBoxes(e.id));
+// Older entries: work out their boxes once (all of them again when the seva rules were just switched)
+(reset.length ? db.prepare('SELECT id FROM entries')
+  : db.prepare('SELECT id FROM entries WHERE id NOT IN (SELECT entry_id FROM entry_boxes)')).all().forEach((e) => saveBoxes(e.id));
 
 // Safe copy of the whole database (works while the app is running)
 function backupTo(file) {
@@ -297,4 +303,4 @@ function dailyBackup() {
   }
 }
 
-module.exports = { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE, saveBoxes, smallBoxLimit };
+module.exports = { db, hashPassword, verifyPassword, backupTo, dailyBackup, DATA_DIR, DEFAULT_PASSWORD, makeCode, codeTaken, CODE_RE, saveBoxes, smallBoxLimit, BOX_RULES };

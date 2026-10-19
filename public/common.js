@@ -92,6 +92,7 @@ const EN = {
   'પેપર બોક્સ': 'paper box',
   'પ્લાસ્ટિક બોક્સ': 'plastic box',
   'અથવા': 'or',
+  'મોટું બોક્સ અલગથી આપવામાં આવે છે': 'Big box is given separately',
   '₹{0} થી ઓછી સેવા': 'Seva below ₹{0}',
   'આ રકમ માટે બોક્સ નથી - બોક્સ માટે ઉપર સેવા પસંદ કરો.': 'No box for this amount - tick a seva above to give a box.',
   'સેવા પસંદ કરો અથવા રકમ લખો.': 'Select a seva or enter the amount.',
