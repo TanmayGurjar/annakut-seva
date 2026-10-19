@@ -249,8 +249,8 @@ function validateEntry(body) {
     mobile: cleanMobile(body.mobile),
     whatsapp: body.whatsapp_same ? cleanMobile(body.mobile) : (cleanMobile(body.whatsapp) || null),
     amount: toInt(body.amount),
-    payment_mode: ['cash', 'upi', 'cheque', 'pending'].includes(body.payment_mode) ? body.payment_mode : 'cash',
-    payment_ref: str(body.payment_ref),
+    payment_mode: body.payment_mode === 'pending' ? 'pending' : 'cash', // cash only (no online payment)
+    payment_ref: null,
     notes: str(body.notes),
     seva_ids: Array.isArray(body.seva_ids) ? body.seva_ids.map(toInt).filter(Number.isFinite) : [],
     // which prasad box option was picked per seva: { sevaId: 1 | 2 }
@@ -457,7 +457,7 @@ function entriesCsv(req) {
   const rows = db.prepare(`${LIST_SQL} WHERE ${f.sql} ORDER BY e.receipt_no`).all(...f.params);
   const cols = [['receipt', 'રસીદ નં'], ['created_at', 'તારીખ'], ['mandal_name', 'મંડળ'], ['devotee_name', 'નામ'],
     ['address', 'સરનામું'], ['mobile', 'મોબાઇલ'], ['whatsapp', 'WhatsApp'], ['seva_names', 'સેવા'], ['box_text', 'પ્રસાદ બોક્સ'], ['amount', 'રકમ'],
-    ['payment_mode', 'ચુકવણી'], ['payment_ref', 'Ref'], ['karyakar_name', 'અન્નકૂટ સેવક'], ['team_name', 'કાર્યકર (ટીમ)'], ['notes', 'નોંધ']];
+    ['payment_mode', 'ચુકવણી'], ['karyakar_name', 'અન્નકૂટ સેવક'], ['team_name', 'કાર્યકર (ટીમ)'], ['notes', 'નોંધ']];
   return toCsv(cols.map((c) => c[1]), rows.map((r) => cols.map((c) => r[c[0]])));
 }
 

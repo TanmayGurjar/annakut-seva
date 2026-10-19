@@ -55,21 +55,11 @@
         <label>🎁 પ્રસાદ બોક્સ</label>
         <div id="boxes" class="boxes"></div>
 
-        <div class="row">
-          <div>
-            <label>ચુકવણી</label>
-            <select name="payment_mode">
-              <option value="cash">રોકડ (Cash)</option>
-              <option value="upi">UPI / Online</option>
-              <option value="cheque">ચેક (Cheque)</option>
-              <option value="pending">બાકી (Pending)</option>
-            </select>
-          </div>
-          <div>
-            <label>UPI/ચેક નં. <span class="opt">(વૈકલ્પિક)</span></label>
-            <input name="payment_ref">
-          </div>
-        </div>
+        <label>ચુકવણી</label>
+        <select name="payment_mode">
+          <option value="cash">રોકડ (Cash)</option>
+          <option value="pending">બાકી (Pending)</option>
+        </select>
 
         <label>નોંધ <span class="opt">(વૈકલ્પિક)</span></label>
         <input name="notes">
@@ -269,7 +259,7 @@
         devotee_name: form.devotee_name.value, mandal_id: form.mandal_id.value, address: form.address.value,
         seva_ids: $$('input[name=seva]:checked').map((c) => Number(c.value)),
         box_options: boxChoice,
-        amount: form.amount.value, payment_mode: form.payment_mode.value, payment_ref: form.payment_ref.value, notes: form.notes.value,
+        amount: form.amount.value, payment_mode: form.payment_mode.value, notes: form.notes.value,
       };
       $('#saveBtn').disabled = true;
       try {
@@ -301,7 +291,7 @@
         $('#cancelEdit').classList.remove('hidden');
         form.mobile.value = e.mobile; form.devotee_name.value = e.devotee_name; form.mandal_id.value = e.mandal_id;
         form.address.value = e.address || ''; form.amount.value = e.amount; form.payment_mode.value = e.payment_mode;
-        form.payment_ref.value = e.payment_ref || ''; form.notes.value = e.notes || '';
+        form.notes.value = e.notes || '';
         const same = !e.whatsapp || e.whatsapp === e.mobile;
         form.whatsapp_same.checked = same; form.whatsapp.value = same ? '' : e.whatsapp;
         $('#waBox').classList.toggle('hidden', same);
